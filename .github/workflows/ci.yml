@@ -96,7 +96,7 @@ jobs:
             artifact_path: .pio/build/m5stack-atomic-can-base/firmware.bin
             extra_python_packages: littlefs-python fatfs-ng pyyaml
           - env: esp32_feather_v2_mcp2515
-            profile: --driver DRIVER_MCP2515 --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
+            profile: --driver DRIVER_ESP32_EXT_MCP2515 --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
             artifact_name: firmware-esp32-featherwing
             artifact_path: .pio/build/esp32_feather_v2_mcp2515/firmware.bin
             extra_python_packages: littlefs-python fatfs-ng pyyaml

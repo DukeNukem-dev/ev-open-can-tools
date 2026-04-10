@@ -19,7 +19,7 @@
 // ── DASHBOARD CREDENTIALS ────────────────────────────────────────
 // Required for all ESP32 dashboard builds. Change all values before flashing.
 // The build will fail if DASH_PASS or DASH_OTA_PASS are left unchanged.
-#define DASH_SSID "EVtools"        // WiFi AP name
+#define DASH_SSID "EVtools"      // WiFi AP name
 #define DASH_PASS "changeme"     // WiFi password (min 8 chars)
 #define DASH_OTA_USER "admin"    // OTA username
 #define DASH_OTA_PASS "changeme" // OTA password
