@@ -89,6 +89,10 @@ static uint8_t hwMode = DASH_DEFAULT_HW;
 static bool canActive = true;
 static bool bypassTlssc = false;
 
+// WiFi AP (hotspot) — overridable at runtime
+static char apSSID[33] = "";
+static char apPass[65] = "";
+
 // WiFi STA (client) mode for internet access
 static char staSSID[33] = "";
 static char staPass[65] = "";
@@ -313,6 +317,18 @@ static void dashLoadPrefs()
         dashHandler->speedProfile = sp;
         dashHandler->enablePrint = ep;
     }
+    // Load WiFi AP overrides (hotspot name/password)
+    String apSsidPref = prefs.getString("ap_ssid", "");
+    String apPassPref = prefs.getString("ap_pass", "");
+    if (apSsidPref.length() > 0)
+        strlcpy(apSSID, apSsidPref.c_str(), sizeof(apSSID));
+    else
+        strlcpy(apSSID, DASH_SSID, sizeof(apSSID));
+    if (apPassPref.length() > 0)
+        strlcpy(apPass, apPassPref.c_str(), sizeof(apPass));
+    else
+        strlcpy(apPass, DASH_PASS, sizeof(apPass));
+
     // Load WiFi STA credentials
     String wifiSsid = prefs.getString("wifi_ssid", "");
     String wifiPass = prefs.getString("wifi_pass", "");
@@ -1030,7 +1046,7 @@ static void dashConnectSTA()
     if (strlen(staSSID) == 0)
         return;
     WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP(DASH_SSID, DASH_PASS);
+    WiFi.softAP(apSSID, apPass);
     if (staStaticIP && (uint32_t)staIP != 0)
     {
         WiFi.config(staIP, staGW, staMask, staDNS);
@@ -1138,6 +1154,47 @@ static void handleWifiStatus()
         j += ",\"cfg_mask\":\"" + staMask.toString() + "\"";
         j += ",\"cfg_dns\":\"" + staDNS.toString() + "\"";
     }
+    j += "}";
+    server.send(200, "application/json", j);
+}
+
+// ── AP Config (hotspot name/password) ───────────────────────────
+
+static void handleApConfig()
+{
+    String newSsid = server.arg("ssid");
+    String newPass = server.arg("pass");
+
+    if (newSsid.length() == 0)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"SSID required\"}");
+        return;
+    }
+    if (newPass.length() > 0 && newPass.length() < 8)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Password must be at least 8 characters\"}");
+        return;
+    }
+
+    strlcpy(apSSID, newSsid.c_str(), sizeof(apSSID));
+    if (newPass.length() > 0)
+        strlcpy(apPass, newPass.c_str(), sizeof(apPass));
+
+    prefs.begin(PREFS_NS, false);
+    prefs.putString("ap_ssid", newSsid);
+    if (newPass.length() > 0)
+        prefs.putString("ap_pass", newPass);
+    prefs.end();
+
+    dashLog("[WIFI] AP config updated: SSID=" + newSsid);
+    server.send(200, "application/json", "{\"ok\":true,\"msg\":\"Saved. Reboot to apply new AP settings.\"}");
+}
+
+static void handleApStatus()
+{
+    String j = "{\"ssid\":\"" + jsonEscape(apSSID) + "\"";
+    j += ",\"ip\":\"" + WiFi.softAPIP().toString() + "\"";
+    j += ",\"clients\":" + String(WiFi.softAPgetStationNum());
     j += "}";
     server.send(200, "application/json", j);
 }
@@ -1439,16 +1496,16 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     if (strlen(staSSID) > 0)
     {
         WiFi.mode(WIFI_AP_STA);
-        WiFi.softAP(DASH_SSID, DASH_PASS);
+        WiFi.softAP(apSSID, apPass);
         WiFi.begin(staSSID, staPass);
         dashLog("[WIFI] AP+STA mode, connecting to " + String(staSSID));
     }
     else
     {
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(DASH_SSID, DASH_PASS);
+        WiFi.softAP(apSSID, apPass);
     }
-    Serial.printf("[WIFI] AP: %s  IP: %s\n", DASH_SSID, WiFi.softAPIP().toString().c_str());
+    Serial.printf("[WIFI] AP: %s  IP: %s\n", apSSID, WiFi.softAPIP().toString().c_str());
 
     xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 1, nullptr, 0);
 
@@ -1481,6 +1538,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/plugin_install", HTTP_POST, handlePluginInstallFromUrl);
     server.on("/plugin_toggle", HTTP_POST, handlePluginToggle);
     server.on("/plugin_remove", HTTP_POST, handlePluginRemove);
+    server.on("/ap_config", HTTP_POST, handleApConfig);
+    server.on("/ap_status", HTTP_GET, handleApStatus);
     server.on("/wifi_scan", HTTP_GET, handleWifiScan);
     server.on("/wifi_config", HTTP_POST, handleWifiConfig);
     server.on("/wifi_status", HTTP_GET, handleWifiStatus);

@@ -393,6 +393,23 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 
 <div class="card">
   <div class="card-hdr">
+    <div class="card-title">WiFi Hotspot</div>
+    <div class="card-meta" id="ap-clients">0 clients</div>
+  </div>
+  <div class="feat-desc" style="margin-bottom:8px">Change the WiFi hotspot name and password</div>
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input class="sniff-input" id="ap-ssid" placeholder="Hotspot Name" style="flex:1">
+    <input class="sniff-input" id="ap-pass" placeholder="New Password (min 8)" type="password" style="flex:1">
+  </div>
+  <div style="display:flex;gap:6px;align-items:center">
+    <button class="sniff-btn" onclick="saveAP()">Save</button>
+    <span style="font-size:11px;color:var(--tx3)" id="ap-status"></span>
+  </div>
+  <div style="font-size:10px;color:var(--tx3);margin-top:6px">Changes take effect after reboot. Leave password empty to keep current.</div>
+</div>
+
+<div class="card">
+  <div class="card-hdr">
     <div class="card-title">Plugins</div>
     <div class="card-meta" id="plg-count">0 installed</div>
   </div>
@@ -791,6 +808,23 @@ async function pollRec(){
   }catch(e){}
 }
 
+// ── AP Hotspot management ──
+async function saveAP(){
+  const ssid=$('ap-ssid').value,pass=$('ap-pass').value;
+  if(!ssid){$('ap-status').textContent='Enter hotspot name';$('ap-status').style.color='var(--err)';return;}
+  if(pass&&pass.length<8){$('ap-status').textContent='Password min 8 chars';$('ap-status').style.color='var(--err)';return;}
+  try{const r=await fetch('/ap_config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'ssid='+encodeURIComponent(ssid)+'&pass='+encodeURIComponent(pass)});
+    const d=await r.json();
+    if(d.ok){$('ap-status').textContent='Saved! Reboot to apply.';$('ap-status').style.color='var(--ok)';$('ap-pass').value='';}
+    else{$('ap-status').textContent=d.error||'Error';$('ap-status').style.color='var(--err)';}
+  }catch(e){$('ap-status').textContent='Error';$('ap-status').style.color='var(--err)';}
+}
+async function loadApStatus(){
+  try{const r=await fetch('/ap_status');const d=await r.json();
+    if(d.ssid)$('ap-ssid').value=d.ssid;
+    $('ap-clients').textContent=d.clients+' client'+(d.clients!==1?'s':'');
+  }catch(e){}
+}
 // ── WiFi management ──
 function toggleStaticIP(){
   $('static-fields').style.display=$('wifi-static').checked?'block':'none';
@@ -971,8 +1005,8 @@ async function loadUpdateInfo(){
   }catch(e){}
 }
 
-setInterval(poll,2000);setInterval(pollLog,3000);setInterval(pollSniffer,1000);setInterval(pollPlugins,10000);setInterval(loadWifiStatus,10000);
-updateHW4(1);buildPills();poll();pollLog();pollSniffer();pollRec();pollPlugins();loadWifiStatus();loadUpdateInfo();
+setInterval(poll,2000);setInterval(pollLog,3000);setInterval(pollSniffer,1000);setInterval(pollPlugins,10000);setInterval(loadWifiStatus,10000);setInterval(loadApStatus,10000);
+updateHW4(1);buildPills();poll();pollLog();pollSniffer();pollRec();pollPlugins();loadWifiStatus();loadApStatus();loadUpdateInfo();
 </script>
 </body>
 </html>
