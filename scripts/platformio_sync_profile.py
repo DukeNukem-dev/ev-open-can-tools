@@ -23,8 +23,8 @@ OPTIONAL_DEFINES = (
 )
 CREDENTIAL_DEFINES = ("DASH_SSID", "DASH_PASS", "DASH_OTA_USER", "DASH_OTA_PASS")
 CREDENTIAL_PLACEHOLDERS = {
-    "DASH_PASS": "changeme1",
-    "DASH_OTA_PASS": "changeme2",
+    "DASH_PASS": "changeme",
+    "DASH_OTA_PASS": "changeme",
 }
 CONFIG_RELATIVE_PATH = Path("platformio_profile.h")
 
