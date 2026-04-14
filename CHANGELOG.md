@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrate esp32_feather_v2_mcp2515 to new mcp2515 driver and web ui
 
+## [2.1.0-beta] - 2026-04-15
+
+### Added
+- WiFi network scanner: scan and display available networks in the dashboard, select by clicking
+- Signal strength indicators (RSSI) and channel info for each scanned network
+- Static IP configuration: optionally set IP, gateway, subnet mask and DNS server
+- Dedicated WiFi status endpoint (/wifi_status) and scan endpoint (/wifi_scan)
+
 ## [2.0.0] - 2026-04-14
 
 ### Added

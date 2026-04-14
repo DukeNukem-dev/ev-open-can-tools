@@ -402,10 +402,30 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     <div class="feat-desc" style="margin-bottom:8px">Connect to your home WiFi for plugin downloads</div>
     <div style="display:flex;gap:6px;margin-bottom:6px">
       <input class="sniff-input" id="wifi-ssid" placeholder="WiFi SSID" style="flex:1">
+      <button class="sniff-btn" onclick="scanWifi()" id="scan-btn">Scan</button>
+    </div>
+    <div id="wifi-nets" style="display:none;margin-bottom:6px;max-height:140px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;background:var(--bg2)"></div>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
       <input class="sniff-input" id="wifi-pass" placeholder="Password" type="password" style="flex:1">
       <button class="sniff-btn" onclick="saveWifi()">Connect</button>
     </div>
-    <div style="font-size:11px;color:var(--tx3)" id="wifi-status">Not configured</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:6px" id="wifi-status">Not configured</div>
+    <details style="margin-top:4px">
+      <summary style="font-size:11px;color:var(--acc);cursor:pointer;user-select:none">Static IP (optional)</summary>
+      <div style="margin-top:6px">
+        <label style="font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <input type="checkbox" id="wifi-static" onchange="toggleStaticIP()"> Use static IP
+        </label>
+        <div id="static-fields" style="display:none">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+            <input class="sniff-input" id="wifi-ip" placeholder="IP (e.g. 192.168.1.100)">
+            <input class="sniff-input" id="wifi-gw" placeholder="Gateway (e.g. 192.168.1.1)">
+            <input class="sniff-input" id="wifi-mask" placeholder="Mask (255.255.255.0)" value="255.255.255.0">
+            <input class="sniff-input" id="wifi-dns" placeholder="DNS (e.g. 8.8.8.8)">
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
 
   <div style="padding-top:12px;border-top:1px solid var(--bd);margin-bottom:14px">
@@ -742,15 +762,54 @@ async function pollRec(){
   }catch(e){}
 }
 
-// ── Plugin management ──
+// ── WiFi management ──
+function toggleStaticIP(){
+  $('static-fields').style.display=$('wifi-static').checked?'block':'none';
+}
+function rssiIcon(r){
+  if(r>=-50) return '\u2587\u2587\u2587\u2587';
+  if(r>=-60) return '\u2587\u2587\u2587\u2581';
+  if(r>=-70) return '\u2587\u2587\u2581\u2581';
+  return '\u2587\u2581\u2581\u2581';
+}
+async function scanWifi(){
+  $('scan-btn').textContent='Scanning...';$('scan-btn').disabled=true;
+  try{
+    const r=await fetch('/wifi_scan');const d=await r.json();
+    const el=$('wifi-nets');
+    if(!d.networks.length){el.innerHTML='<div style="padding:8px;font-size:11px;color:var(--tx3);text-align:center">No networks found</div>';el.style.display='block';}
+    else{el.innerHTML=d.networks.map(n=>'<div onclick="pickWifi(\''+n.ssid.replace(/'/g,"\\'")+'\')" style="padding:6px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--bd);font-size:12px" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'\'"><span>'+(n.enc?'\uD83D\uDD12 ':'')+n.ssid+'</span><span style="color:var(--tx3);font-size:10px">'+rssiIcon(n.rssi)+' '+n.rssi+'dBm CH'+n.ch+'</span></div>').join('');el.style.display='block';}
+  }catch(e){$('wifi-status').textContent='Scan failed';$('wifi-status').style.color='var(--err)';}
+  $('scan-btn').textContent='Scan';$('scan-btn').disabled=false;
+}
+function pickWifi(ssid){
+  $('wifi-ssid').value=ssid;$('wifi-nets').style.display='none';$('wifi-pass').focus();
+}
+async function loadWifiStatus(){
+  try{const r=await fetch('/wifi_status');const d=await r.json();
+    if(d.ssid)$('wifi-ssid').value=d.ssid;
+    if(d.connected){$('wifi-status').textContent='Connected: '+d.ip;$('wifi-status').style.color='var(--ok)';}
+    else if(d.ssid){$('wifi-status').textContent='Connecting to '+d.ssid+'...';$('wifi-status').style.color='var(--acc)';}
+    if(d.static){$('wifi-static').checked=true;toggleStaticIP();
+      if(d.cfg_ip)$('wifi-ip').value=d.cfg_ip;
+      if(d.cfg_gw)$('wifi-gw').value=d.cfg_gw;
+      if(d.cfg_mask)$('wifi-mask').value=d.cfg_mask;
+      if(d.cfg_dns)$('wifi-dns').value=d.cfg_dns;
+    }
+  }catch(e){}
+}
 async function saveWifi(){
   const ssid=$('wifi-ssid').value,pass=$('wifi-pass').value;
   if(!ssid){$('wifi-status').textContent='Enter SSID';return;}
-  const body='ssid='+encodeURIComponent(ssid)+'&pass='+encodeURIComponent(pass);
+  let body='ssid='+encodeURIComponent(ssid)+'&pass='+encodeURIComponent(pass);
+  if($('wifi-static').checked){
+    body+='&static=1&ip='+encodeURIComponent($('wifi-ip').value)+'&gw='+encodeURIComponent($('wifi-gw').value)+'&mask='+encodeURIComponent($('wifi-mask').value)+'&dns='+encodeURIComponent($('wifi-dns').value);
+  }
   try{await fetch('/wifi_config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
     $('wifi-status').textContent='Connecting to '+ssid+'...';$('wifi-status').style.color='var(--acc)';
   }catch(e){$('wifi-status').textContent='Error';$('wifi-status').style.color='var(--err)';}
 }
+// ── Plugin management ──
 async function installPlugin(){
   const url=$('plg-url').value;
   if(!url){$('plg-status').textContent='Enter URL';return;}
@@ -838,17 +897,11 @@ async function pollPlugins(){
       row+='</div>';
       return row;
     }).join('');}
-    if(d.wifi){
-      if(d.wifi.connected){$('wifi-status').textContent='Connected: '+d.wifi.ip;$('wifi-status').style.color='var(--ok)';}
-      else if(d.wifi.ssid){$('wifi-status').textContent='Connecting to '+d.wifi.ssid+'...';$('wifi-status').style.color='var(--acc)';}
-      else{$('wifi-status').textContent='Not configured';$('wifi-status').style.color='';}
-      if(d.wifi.ssid)$('wifi-ssid').value=d.wifi.ssid;
-    }
   }catch(e){}
 }
 
-setInterval(poll,2000);setInterval(pollLog,3000);setInterval(pollSniffer,1000);setInterval(pollPlugins,10000);
-updateHW4(1);buildPills();poll();pollLog();pollSniffer();pollRec();pollPlugins();
+setInterval(poll,2000);setInterval(pollLog,3000);setInterval(pollSniffer,1000);setInterval(pollPlugins,10000);setInterval(loadWifiStatus,10000);
+updateHW4(1);buildPills();poll();pollLog();pollSniffer();pollRec();pollPlugins();loadWifiStatus();
 </script>
 </body>
 </html>

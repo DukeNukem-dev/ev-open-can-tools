@@ -93,6 +93,11 @@ static bool bypassTlssc = false;
 static char staSSID[33] = "";
 static char staPass[65] = "";
 static bool staConnected = false;
+static bool staStaticIP = false;
+static IPAddress staIP(0, 0, 0, 0);
+static IPAddress staGW(0, 0, 0, 0);
+static IPAddress staMask(255, 255, 255, 0);
+static IPAddress staDNS(0, 0, 0, 0);
 
 static void dashSwapHandler(uint8_t mode);
 static void dashApplyFilters();
@@ -312,6 +317,14 @@ static void dashLoadPrefs()
     String wifiPass = prefs.getString("wifi_pass", "");
     strlcpy(staSSID, wifiSsid.c_str(), sizeof(staSSID));
     strlcpy(staPass, wifiPass.c_str(), sizeof(staPass));
+    staStaticIP = prefs.getBool("wifi_static", false);
+    if (staStaticIP)
+    {
+        staIP.fromString(prefs.getString("wifi_ip", "0.0.0.0"));
+        staGW.fromString(prefs.getString("wifi_gw", "0.0.0.0"));
+        staMask.fromString(prefs.getString("wifi_mask", "255.255.255.0"));
+        staDNS.fromString(prefs.getString("wifi_dns", "0.0.0.0"));
+    }
 
     dashLog("[BOOT] Prefs loaded HW=" + String(hwMode) + " SP=" + String(sp));
     dashLog("[BOOT] canActive=YES bypassTlssc=" + String(bypassTlssc ? "YES" : "NO"));
@@ -1015,6 +1028,15 @@ static void dashConnectSTA()
         return;
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(DASH_SSID, DASH_PASS);
+    if (staStaticIP && (uint32_t)staIP != 0)
+    {
+        WiFi.config(staIP, staGW, staMask, staDNS);
+        dashLog("[WIFI] Static IP: " + staIP.toString());
+    }
+    else
+    {
+        WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
+    }
     WiFi.begin(staSSID, staPass);
     dashLog("[WIFI] Connecting to " + String(staSSID) + "...");
 }
@@ -1039,6 +1061,25 @@ static void dashCheckWifi()
     }
 }
 
+static void handleWifiScan()
+{
+    int n = WiFi.scanNetworks(false, false, false, 300);
+    String j = "{\"networks\":[";
+    for (int i = 0; i < n && i < 20; i++)
+    {
+        if (i)
+            j += ",";
+        j += "{\"ssid\":\"" + jsonEscape(WiFi.SSID(i).c_str()) + "\"";
+        j += ",\"rssi\":" + String(WiFi.RSSI(i));
+        j += ",\"enc\":" + String(WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false");
+        j += ",\"ch\":" + String(WiFi.channel(i));
+        j += "}";
+    }
+    j += "]}";
+    WiFi.scanDelete();
+    server.send(200, "application/json", j);
+}
+
 static void handleWifiConfig()
 {
     if (server.hasArg("ssid"))
@@ -1051,12 +1092,51 @@ static void handleWifiConfig()
         prefs.begin(PREFS_NS, false);
         prefs.putString("wifi_ssid", ssid);
         prefs.putString("wifi_pass", pass);
+
+        // Static IP config
+        if (server.hasArg("static") && server.arg("static") == "1")
+        {
+            staStaticIP = true;
+            staIP.fromString(server.arg("ip"));
+            staGW.fromString(server.arg("gw"));
+            staMask.fromString(server.arg("mask"));
+            staDNS.fromString(server.arg("dns"));
+            prefs.putBool("wifi_static", true);
+            prefs.putString("wifi_ip", server.arg("ip"));
+            prefs.putString("wifi_gw", server.arg("gw"));
+            prefs.putString("wifi_mask", server.arg("mask"));
+            prefs.putString("wifi_dns", server.arg("dns"));
+        }
+        else
+        {
+            staStaticIP = false;
+            prefs.putBool("wifi_static", false);
+        }
         prefs.end();
 
         staConnected = false;
         dashConnectSTA();
     }
     server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleWifiStatus()
+{
+    String j = "{\"connected\":";
+    j += staConnected ? "true" : "false";
+    j += ",\"ssid\":\"" + jsonEscape(staSSID) + "\"";
+    if (staConnected)
+        j += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+    j += ",\"static\":" + String(staStaticIP ? "true" : "false");
+    if (staStaticIP)
+    {
+        j += ",\"cfg_ip\":\"" + staIP.toString() + "\"";
+        j += ",\"cfg_gw\":\"" + staGW.toString() + "\"";
+        j += ",\"cfg_mask\":\"" + staMask.toString() + "\"";
+        j += ",\"cfg_dns\":\"" + staDNS.toString() + "\"";
+    }
+    j += "}";
+    server.send(200, "application/json", j);
 }
 
 // ── Plugin frame callback wrapper ───────────────────────────────
@@ -1196,7 +1276,9 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/plugin_install", HTTP_POST, handlePluginInstallFromUrl);
     server.on("/plugin_toggle", HTTP_POST, handlePluginToggle);
     server.on("/plugin_remove", HTTP_POST, handlePluginRemove);
+    server.on("/wifi_scan", HTTP_GET, handleWifiScan);
     server.on("/wifi_config", HTTP_POST, handleWifiConfig);
+    server.on("/wifi_status", HTTP_GET, handleWifiStatus);
 
     server.begin();
     Serial.println("[WEB] Dashboard: http://192.168.4.1");
