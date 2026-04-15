@@ -1141,9 +1141,17 @@ static void handleWifiConfig()
 
 static void handleWifiStatus()
 {
+    Preferences p;
+    bool stored = false;
+    if (p.begin(PREFS_NS, true))
+    {
+        stored = p.getString("wifi_ssid", "").length() > 0;
+        p.end();
+    }
     String j = "{\"connected\":";
     j += staConnected ? "true" : "false";
     j += ",\"ssid\":\"" + jsonEscape(staSSID) + "\"";
+    j += ",\"stored\":" + String(stored ? "true" : "false");
     if (staConnected)
         j += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
     j += ",\"static\":" + String(staStaticIP ? "true" : "false");
@@ -1213,6 +1221,120 @@ static void handleCanPinsSave()
     server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
 }
 
+// ── Settings Backup / Restore ───────────────────────────────────
+
+static void handleSettingsExport()
+{
+    Preferences p;
+    String apSsid = "", apPass = "", wSsid = "", wPass = "";
+    String wIp = "", wGw = "", wMask = "", wDns = "";
+    bool wStatic = false, beta = false;
+    int canTx = -1, canRx = -1;
+
+    if (p.begin(PREFS_NS, true))
+    {
+        apSsid = p.getString("ap_ssid", "");
+        apPass = p.getString("ap_pass", "");
+        wSsid = p.getString("wifi_ssid", "");
+        wPass = p.getString("wifi_pass", "");
+        wStatic = p.getBool("wifi_static", false);
+        wIp = p.getString("wifi_ip", "");
+        wGw = p.getString("wifi_gw", "");
+        wMask = p.getString("wifi_mask", "");
+        wDns = p.getString("wifi_dns", "");
+        beta = p.getBool("upd_beta", false);
+        p.end();
+    }
+    Preferences cp;
+    if (cp.begin("can", true))
+    {
+        canTx = cp.getChar("tx", -1);
+        canRx = cp.getChar("rx", -1);
+        cp.end();
+    }
+
+    String j = "{\"version\":\"" FIRMWARE_VERSION "\"";
+    j += ",\"ap\":{\"ssid\":\"" + jsonEscape(apSsid) + "\",\"pass\":\"" + jsonEscape(apPass) + "\"}";
+    j += ",\"wifi\":{\"ssid\":\"" + jsonEscape(wSsid) + "\",\"pass\":\"" + jsonEscape(wPass) + "\"";
+    j += ",\"static\":" + String(wStatic ? "true" : "false");
+    j += ",\"ip\":\"" + jsonEscape(wIp) + "\",\"gw\":\"" + jsonEscape(wGw) + "\"";
+    j += ",\"mask\":\"" + jsonEscape(wMask) + "\",\"dns\":\"" + jsonEscape(wDns) + "\"}";
+    j += ",\"can\":{\"tx\":" + String(canTx) + ",\"rx\":" + String(canRx) + "}";
+    j += ",\"beta\":" + String(beta ? "true" : "false");
+    j += "}";
+
+    server.sendHeader("Content-Disposition", "attachment; filename=\"evtools-backup.json\"");
+    server.send(200, "application/json", j);
+}
+
+static void handleSettingsImport()
+{
+    String body = server.arg("plain");
+    if (body.length() == 0)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Empty body\"}");
+        return;
+    }
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (err)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid JSON\"}");
+        return;
+    }
+
+    Preferences p;
+    if (!p.begin(PREFS_NS, false))
+    {
+        server.send(500, "application/json", "{\"ok\":false,\"error\":\"NVS open failed\"}");
+        return;
+    }
+
+    if (doc["ap"].is<JsonObject>())
+    {
+        const char *s = doc["ap"]["ssid"] | "";
+        const char *pw = doc["ap"]["pass"] | "";
+        if (strlen(s) > 0) p.putString("ap_ssid", s);
+        if (strlen(pw) >= 8) p.putString("ap_pass", pw);
+    }
+    if (doc["wifi"].is<JsonObject>())
+    {
+        const char *s = doc["wifi"]["ssid"] | "";
+        const char *pw = doc["wifi"]["pass"] | "";
+        p.putString("wifi_ssid", s);
+        p.putString("wifi_pass", pw);
+        p.putBool("wifi_static", doc["wifi"]["static"] | false);
+        p.putString("wifi_ip", (const char *)(doc["wifi"]["ip"] | ""));
+        p.putString("wifi_gw", (const char *)(doc["wifi"]["gw"] | ""));
+        p.putString("wifi_mask", (const char *)(doc["wifi"]["mask"] | ""));
+        p.putString("wifi_dns", (const char *)(doc["wifi"]["dns"] | ""));
+    }
+    if (doc["beta"].is<bool>())
+        p.putBool("upd_beta", doc["beta"].as<bool>());
+    p.end();
+
+    if (doc["can"].is<JsonObject>())
+    {
+        int tx = doc["can"]["tx"] | -1;
+        int rx = doc["can"]["rx"] | -1;
+        Preferences cp;
+        if (cp.begin("can", false))
+        {
+            if (tx >= 0 && tx <= 39 && rx >= 0 && rx <= 39 && tx != rx &&
+                !((tx >= 6 && tx <= 11) || (rx >= 6 && rx <= 11)))
+            {
+                cp.putChar("tx", (int8_t)tx);
+                cp.putChar("rx", (int8_t)rx);
+            }
+            cp.end();
+        }
+    }
+
+    dashLog("[BACKUP] Settings imported (reboot required)");
+    server.send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+}
+
 static void handleApConfig()
 {
     String newSsid = server.arg("ssid");
@@ -1245,9 +1367,17 @@ static void handleApConfig()
 
 static void handleApStatus()
 {
+    Preferences p;
+    bool stored = false;
+    if (p.begin(PREFS_NS, true))
+    {
+        stored = p.getString("ap_ssid", "").length() > 0;
+        p.end();
+    }
     String j = "{\"ssid\":\"" + jsonEscape(apSSID) + "\"";
     j += ",\"ip\":\"" + WiFi.softAPIP().toString() + "\"";
     j += ",\"clients\":" + String(WiFi.softAPgetStationNum());
+    j += ",\"stored\":" + String(stored ? "true" : "false");
     j += "}";
     server.send(200, "application/json", j);
 }
@@ -1595,6 +1725,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/ap_status", HTTP_GET, handleApStatus);
     server.on("/can_pins", HTTP_GET, handleCanPins);
     server.on("/can_pins", HTTP_POST, handleCanPinsSave);
+    server.on("/settings_export", HTTP_GET, handleSettingsExport);
+    server.on("/settings_import", HTTP_POST, handleSettingsImport);
     server.on("/wifi_scan", HTTP_GET, handleWifiScan);
     server.on("/wifi_config", HTTP_POST, handleWifiConfig);
     server.on("/wifi_status", HTTP_GET, handleWifiStatus);

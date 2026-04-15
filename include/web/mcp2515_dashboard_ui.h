@@ -393,8 +393,11 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 
 <div class="card">
   <div class="card-hdr">
-    <div class="card-title">WiFi Hotspot</div>
-    <div class="card-meta" id="ap-clients">0 clients</div>
+    <div class="card-title">WiFi Hotspot <span onclick="toggleInfo('ap-info')" style="color:var(--tx3);cursor:pointer;font-size:12px;margin-left:4px" title="About WiFi storage">&#9432;</span></div>
+    <div class="card-meta"><span id="ap-stored" style="margin-right:8px"></span><span id="ap-clients">0 clients</span></div>
+  </div>
+  <div id="ap-info" style="display:none;margin-bottom:10px;padding:10px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;font-size:12px;color:var(--tx3);line-height:1.5">
+    Stored in NVS (non-volatile storage). The SSID and password survive firmware updates and reboots. Only a full factory erase via USB clears them.
   </div>
   <div class="feat-desc" style="margin-bottom:8px">Change the WiFi hotspot name and password</div>
   <div style="display:flex;gap:6px;margin-bottom:6px">
@@ -420,8 +423,8 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
   </div>
 
   <div style="margin-bottom:14px">
-    <div class="feat-name" style="margin-bottom:8px">WiFi Internet</div>
-    <div class="feat-desc" style="margin-bottom:8px">Connect to your home WiFi for plugin downloads</div>
+    <div class="feat-name" style="margin-bottom:8px;display:flex;align-items:center;gap:6px">WiFi Internet <span id="wifi-stored" style="font-size:11px;font-weight:normal"></span></div>
+    <div class="feat-desc" style="margin-bottom:8px">Connect to your home WiFi for plugin downloads. Stored in NVS &mdash; survives firmware updates.</div>
     <div style="display:flex;gap:6px;margin-bottom:6px">
       <input class="sniff-input" id="wifi-ssid" placeholder="WiFi SSID" style="flex:1">
       <button class="sniff-btn" onclick="scanWifi()" id="scan-btn">Scan</button>
@@ -514,6 +517,21 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     <button class="sniff-btn" onclick="saveCanPins()">Save</button>
   </div>
   <div style="font-size:11px;color:var(--tx3);margin-top:6px" id="can-pins-hint">Reboot required after change</div>
+</div>
+
+<div class="card">
+  <div class="card-hdr">
+    <div class="card-title">Settings Backup <span onclick="toggleInfo('backup-info')" style="color:var(--tx3);cursor:pointer;font-size:12px;margin-left:4px" title="About backup">&#9432;</span></div>
+    <div class="card-meta" id="backup-status"></div>
+  </div>
+  <div id="backup-info" style="display:none;margin-bottom:10px;padding:10px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;font-size:12px;color:var(--tx3);line-height:1.5">
+    Exports AP credentials, WiFi Internet, CAN pins and beta channel as JSON. Useful before a full re-flash or when migrating to another device. <b>Passwords are included in clear text</b> &mdash; keep the file safe.
+  </div>
+  <div style="display:flex;gap:6px">
+    <button class="sniff-btn" onclick="exportSettings()">Download</button>
+    <button class="sniff-btn" onclick="document.getElementById('backup-file').click()">Upload &amp; Restore</button>
+    <input type="file" id="backup-file" accept=".json,application/json" style="display:none" onchange="importSettings(event)">
+  </div>
 </div>
 
 <div class="card">
@@ -849,6 +867,8 @@ async function loadApStatus(){
   try{const r=await fetch('/ap_status');const d=await r.json();
     if(d.ssid)$('ap-ssid').value=d.ssid;
     $('ap-clients').textContent=d.clients+' client'+(d.clients!==1?'s':'');
+    if(d.stored){$('ap-stored').textContent='saved';$('ap-stored').style.color='var(--ok)';}
+    else{$('ap-stored').textContent='firmware default';$('ap-stored').style.color='var(--tx3)';}
   }catch(e){}
 }
 // ── WiFi management ──
@@ -877,6 +897,8 @@ function pickWifi(ssid){
 async function loadWifiStatus(){
   try{const r=await fetch('/wifi_status');const d=await r.json();
     if(d.ssid)$('wifi-ssid').value=d.ssid;
+    if(d.stored){$('wifi-stored').textContent='\u2022 saved';$('wifi-stored').style.color='var(--ok)';}
+    else{$('wifi-stored').textContent='';}
     if(d.connected){$('wifi-status').textContent='Connected: '+d.ip;$('wifi-status').style.color='var(--ok)';}
     else if(d.ssid){$('wifi-status').textContent='Connecting to '+d.ssid+'...';$('wifi-status').style.color='var(--acc)';}
     if(d.static){$('wifi-static').checked=true;toggleStaticIP();
@@ -1060,6 +1082,36 @@ async function saveCanPins(){
       $('can-pins-hint').textContent=d.error||'Save failed';$('can-pins-hint').style.color='var(--err)';
     }
   }catch(e){$('can-pins-hint').textContent='Connection error';$('can-pins-hint').style.color='var(--err)';}
+}
+
+async function exportSettings(){
+  $('backup-status').textContent='Preparing...';$('backup-status').style.color='var(--tx3)';
+  try{const r=await fetch('/settings_export');
+    if(!r.ok){throw new Error('HTTP '+r.status);}
+    const text=await r.text();
+    const blob=new Blob([text],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='evtools-backup.json';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    $('backup-status').textContent='Downloaded';$('backup-status').style.color='var(--ok)';
+  }catch(e){$('backup-status').textContent='Export failed';$('backup-status').style.color='var(--err)';}
+}
+async function importSettings(ev){
+  const f=ev.target.files[0];if(!f)return;
+  const text=await f.text();
+  try{JSON.parse(text);}catch(e){$('backup-status').textContent='Invalid JSON';$('backup-status').style.color='var(--err)';return;}
+  if(!confirm('Restore settings from '+f.name+' and reboot?'))return;
+  $('backup-status').textContent='Uploading...';$('backup-status').style.color='var(--acc)';
+  try{const r=await fetch('/settings_import',{method:'POST',headers:{'Content-Type':'application/json'},body:text});
+    const d=await r.json();
+    if(d.ok){
+      $('backup-status').textContent='Restored. Rebooting...';$('backup-status').style.color='var(--ok)';
+      await fetch('/reboot',{method:'POST'});
+      setTimeout(()=>location.reload(),8000);
+    }else{
+      $('backup-status').textContent=d.error||'Import failed';$('backup-status').style.color='var(--err)';
+    }
+  }catch(e){$('backup-status').textContent='Upload failed';$('backup-status').style.color='var(--err)';}
+  ev.target.value='';
 }
 
 setInterval(poll,2000);setInterval(pollLog,3000);setInterval(pollSniffer,1000);setInterval(pollPlugins,10000);setInterval(loadWifiStatus,10000);setInterval(loadApStatus,10000);

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrate esp32_feather_v2_mcp2515 to new mcp2515 driver and web ui
 
+## [2.1.0-beta.5] - 2026-04-15
+
+### Added
+- Visible "saved" / "firmware default" status badge on the WiFi Hotspot and WiFi Internet cards
+- Info icon on WiFi Hotspot card explaining that credentials are stored in NVS and survive firmware updates
+- Settings Backup card: export all persistent settings (AP, WiFi Internet, CAN pins, beta flag) as JSON for safekeeping or migration to another device
+- Settings Restore: upload a previously exported JSON to restore all persistent settings in one go
+- New endpoints: /settings_export (GET), /settings_import (POST)
+
+### Note
+- WiFi credentials were already OTA-safe in prior versions; these changes make the persistence explicit in the UI and add disaster-recovery via backup file
+
 ## [2.1.0-beta.4] - 2026-04-15
 
 ### Added
