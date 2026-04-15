@@ -514,6 +514,13 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
       </div>
       <label class="tgl"><input type="checkbox" id="beta-tgl" onchange="toggleBeta()"><div class="tgl-track"><div class="tgl-thumb"></div></div></label>
     </div>
+    <div class="feat-row">
+      <div class="feat-info">
+        <div class="feat-name">Auto-Update on Boot</div>
+        <div class="feat-desc">Check and install updates automatically ~15 s after WiFi connects</div>
+      </div>
+      <label class="tgl"><input type="checkbox" id="auto-upd-tgl" onchange="toggleAutoUpdate()"><div class="tgl-track"><div class="tgl-thumb"></div></div></label>
+    </div>
   </div>
   <div style="display:flex;gap:6px;align-items:center">
     <button class="sniff-btn" onclick="checkUpdate()" id="upd-check-btn">Check for Updates</button>
@@ -1082,6 +1089,11 @@ async function loadUpdateInfo(){
     if(d.version){$('fw-ver').textContent='v'+d.version;updateFoot(d.version);}
     $('beta-tgl').checked=!!d.beta;
   }catch(e){}
+  try{const r=await fetch('/auto_update');const d=await r.json();$('auto-upd-tgl').checked=!!d.enabled;}catch(e){}
+}
+async function toggleAutoUpdate(){
+  const en=$('auto-upd-tgl').checked?'1':'0';
+  try{await fetch('/auto_update',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'enabled='+en});}catch(e){}
 }
 function updateFoot(ver){
   var ip=location.hostname||'192.168.4.1';

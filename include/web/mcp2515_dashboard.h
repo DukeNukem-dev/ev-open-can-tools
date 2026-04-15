@@ -99,6 +99,9 @@ static char staPass[65] = "";
 static bool staConnected = false;
 static bool staStaticIP = false;
 static bool updateBetaChannel = false;
+static bool autoUpdateEnabled = false;
+static bool autoUpdateDone = false;          // one-shot per boot
+static unsigned long autoUpdateEligibleAt = 0; // millis() at which auto-check may fire
 static IPAddress staIP(0, 0, 0, 0);
 static IPAddress staGW(0, 0, 0, 0);
 static IPAddress staMask(255, 255, 255, 0);
@@ -344,6 +347,7 @@ static void dashLoadPrefs()
     }
 
     updateBetaChannel = prefs.getBool("update_beta", false);
+    autoUpdateEnabled = prefs.getBool("auto_upd", false);
 
     dashLog("[BOOT] Prefs loaded HW=" + String(hwMode) + " SP=" + String(sp));
     dashLog("[BOOT] canActive=YES bypassTlssc=" + String(bypassTlssc ? "YES" : "NO"));
@@ -1060,6 +1064,8 @@ static void dashConnectSTA()
     dashLog("[WIFI] Connecting to " + String(staSSID) + "...");
 }
 
+static void performAutoUpdate(); // forward decl, defined below
+
 static void dashCheckWifi()
 {
     static unsigned long lastCheck = 0;
@@ -1074,9 +1080,21 @@ static void dashCheckWifi()
     {
         staConnected = connected;
         if (connected)
+        {
             dashLog("[WIFI] Connected to " + String(staSSID) + " IP: " + WiFi.localIP().toString());
+            // Schedule auto-update check 15 s after STA comes up (grace period for other boot work)
+            if (autoUpdateEnabled && !autoUpdateDone)
+                autoUpdateEligibleAt = millis() + 15000;
+        }
         else
             dashLog("[WIFI] Disconnected from " + String(staSSID));
+    }
+
+    // Fire one-shot auto-update check once eligible
+    if (autoUpdateEnabled && !autoUpdateDone && staConnected && autoUpdateEligibleAt > 0 && millis() >= autoUpdateEligibleAt)
+    {
+        autoUpdateDone = true;
+        performAutoUpdate();
     }
 }
 
@@ -1569,6 +1587,153 @@ static void handleUpdateInstall()
     ESP.restart();
 }
 
+// Check GitHub for a newer release and, if found, download + install it.
+// Blocking; on success calls ESP.restart() and never returns.
+static void performAutoUpdate()
+{
+    if (!staConnected)
+        return;
+
+    dashLog("[AUTO-OTA] Checking for updates...");
+
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+
+    String url;
+    if (updateBetaChannel)
+        url = "https://api.github.com/repos/" + String(GITHUB_REPO) + "/releases?per_page=5";
+    else
+        url = "https://api.github.com/repos/" + String(GITHUB_REPO) + "/releases/latest";
+
+    http.begin(client, url);
+    http.addHeader("Accept", "application/vnd.github+json");
+    http.addHeader("User-Agent", "ESP32-OTA");
+    int code = http.GET();
+    if (code != 200)
+    {
+        dashLog("[AUTO-OTA] GitHub API error " + String(code));
+        http.end();
+        return;
+    }
+    String payload = http.getString();
+    http.end();
+
+    JsonDocument doc;
+    if (deserializeJson(doc, payload))
+    {
+        dashLog("[AUTO-OTA] JSON parse error");
+        return;
+    }
+
+    JsonObject release;
+    if (updateBetaChannel)
+    {
+        JsonArray arr = doc.as<JsonArray>();
+        for (JsonObject r : arr)
+        {
+            release = r;
+            break;
+        }
+    }
+    else
+    {
+        release = doc.as<JsonObject>();
+    }
+    if (release.isNull())
+    {
+        dashLog("[AUTO-OTA] No release found");
+        return;
+    }
+
+    String tagName = release["tag_name"] | "";
+    String version = tagName;
+    if (version.startsWith("v"))
+        version = version.substring(1);
+    if (version == FIRMWARE_VERSION)
+    {
+        dashLog("[AUTO-OTA] Already up to date (" + version + ")");
+        return;
+    }
+
+    const char *artifact = getFirmwareArtifact();
+    String downloadUrl = "";
+    for (JsonObject asset : release["assets"].as<JsonArray>())
+    {
+        String name = asset["name"] | "";
+        if (name == artifact)
+        {
+            downloadUrl = asset["browser_download_url"].as<String>();
+            break;
+        }
+    }
+    if (!downloadUrl.length())
+    {
+        dashLog("[AUTO-OTA] No matching artifact for this build");
+        return;
+    }
+
+    dashLog("[AUTO-OTA] Update " + version + " available. Installing...");
+
+    HTTPClient http2;
+    http2.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    http2.begin(client, downloadUrl);
+    http2.addHeader("Accept", "application/octet-stream");
+    int code2 = http2.GET();
+    if (code2 != 200)
+    {
+        dashLog("[AUTO-OTA] Download failed: HTTP " + String(code2));
+        http2.end();
+        return;
+    }
+    int len = http2.getSize();
+    if (len <= 0)
+    {
+        dashLog("[AUTO-OTA] Invalid content length");
+        http2.end();
+        return;
+    }
+    if (!Update.begin(len))
+    {
+        dashLog("[AUTO-OTA] Not enough space for update");
+        http2.end();
+        return;
+    }
+    WiFiClient *stream = http2.getStreamPtr();
+    size_t written = Update.writeStream(*stream);
+    http2.end();
+    if (written != (size_t)len)
+    {
+        dashLog("[AUTO-OTA] Written " + String(written) + "/" + String(len) + " bytes");
+        Update.abort();
+        return;
+    }
+    if (!Update.end())
+    {
+        dashLog("[AUTO-OTA] Finalize failed");
+        return;
+    }
+    dashLog("[AUTO-OTA] Update successful! Rebooting...");
+    delay(1000);
+    ESP.restart();
+}
+
+static void handleAutoUpdate()
+{
+    if (server.hasArg("enabled"))
+    {
+        autoUpdateEnabled = server.arg("enabled") == "1";
+        prefs.begin(PREFS_NS, false);
+        prefs.putBool("auto_upd", autoUpdateEnabled);
+        prefs.end();
+        dashLog("[AUTO-OTA] " + String(autoUpdateEnabled ? "enabled" : "disabled"));
+    }
+    String j = "{\"ok\":true,\"enabled\":";
+    j += autoUpdateEnabled ? "true" : "false";
+    j += "}";
+    server.send(200, "application/json", j);
+}
+
 static void handleUpdateBeta()
 {
     if (server.hasArg("beta"))
@@ -1733,6 +1898,8 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/update_check", HTTP_GET, handleUpdateCheck);
     server.on("/update_install", HTTP_POST, handleUpdateInstall);
     server.on("/update_beta", HTTP_POST, handleUpdateBeta);
+    server.on("/auto_update", HTTP_GET, handleAutoUpdate);
+    server.on("/auto_update", HTTP_POST, handleAutoUpdate);
 
     server.begin();
     Serial.println("[WEB] Dashboard: http://" + WiFi.softAPIP().toString());

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrate esp32_feather_v2_mcp2515 to new mcp2515 driver and web ui
 
+## [2.2.0-beta.2] - 2026-04-15
+
+### Added
+- Auto-Update on Boot: optional toggle in the Firmware Update card. When enabled, the device checks GitHub for a newer release ~15 seconds after the WiFi Internet connection comes up and installs it automatically
+- Respects the Beta Channel toggle (only installs prereleases when that is on)
+- Setting persisted in NVS so it survives firmware updates
+- New endpoints: `/auto_update` (GET/POST)
+
 ## [2.2.0-beta.1] - 2026-04-15
 
 ### Added
