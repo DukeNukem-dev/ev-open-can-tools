@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrate esp32_feather_v2_mcp2515 to new mcp2515 driver and web ui
 
+## [2.2.0-beta.6] - 2026-04-15
+
+### Changed
+- Dashboard layout: the two separate Firmware Update cards (GitHub OTA and manual .bin upload) have been merged into a single card. Manual .bin upload is now a collapsible section under the primary update controls
+- WiFi Internet moved into its own top-level card (previously nested inside the Plugins card) — it is used for both firmware updates and plugin downloads, so it deserves its own slot
+
 ## [2.2.0-beta.5] - 2026-04-15
 
 ### Fixed

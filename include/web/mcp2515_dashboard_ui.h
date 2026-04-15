@@ -364,25 +364,6 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 </div>
 
 <div class="card">
-  <div class="card-hdr"><div class="card-title">Firmware Update</div><div class="card-meta">OTA via WiFi</div></div>
-  <div class="ota-drop" id="ota-drop" onclick="$('ota-file').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
-    <input type="file" id="ota-file" accept=".bin" onchange="fileSelected(this.files[0])">
-    <div class="ota-icon">&#8679;</div>
-    <div class="ota-text">Tap to select firmware .bin</div>
-    <div class="ota-sub">Or drag and drop a file here</div>
-  </div>
-  <div class="ota-progress" id="ota-progress">
-    <div class="ota-bar"><div class="ota-fill" id="ota-fill"></div></div>
-    <div class="ota-status" id="ota-status">Uploading...</div>
-  </div>
-  <button class="ota-btn" id="ota-upload-btn" onclick="uploadFirmware()">Flash Firmware</button>
-  <div style="margin-top:10px;font-size:11px;color:var(--tx3);line-height:1.7">
-    Build your .bin in PlatformIO: <span style="color:var(--acc);font-family:monospace">Ctrl+Alt+B</span><br>
-    File is at: <span style="color:var(--acc);font-family:monospace">.pio/build/esp32_ext_mcp2515/firmware.bin</span>
-  </div>
-</div>
-
-<div class="card">
   <div class="card-hdr">
     <div class="card-title">WiFi Hotspot <span onclick="toggleInfo('ap-info')" style="color:var(--tx3);cursor:pointer;font-size:12px;margin-left:4px" title="About WiFi storage">&#9432;</span></div>
     <div class="card-meta"><span id="ap-stored" style="margin-right:8px"></span><span id="ap-clients">0 clients</span></div>
@@ -404,6 +385,39 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 
 <div class="card">
   <div class="card-hdr">
+    <div class="card-title">WiFi Internet <span id="wifi-stored" style="font-size:11px;font-weight:normal;color:var(--tx3)"></span></div>
+    <div class="card-meta" id="wifi-status">Not configured</div>
+  </div>
+  <div class="feat-desc" style="margin-bottom:8px">Connect to your home WiFi. Required for firmware updates and plugin downloads. Stored in NVS &mdash; survives firmware updates.</div>
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input class="sniff-input" id="wifi-ssid" placeholder="WiFi SSID" style="flex:1">
+    <button class="sniff-btn" onclick="scanWifi()" id="scan-btn">Scan</button>
+  </div>
+  <div id="wifi-nets" style="display:none;margin-bottom:6px;max-height:140px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;background:var(--bg2)"></div>
+  <div style="display:flex;gap:6px;margin-bottom:6px">
+    <input class="sniff-input" id="wifi-pass" placeholder="Password" type="password" style="flex:1">
+    <button class="sniff-btn" onclick="saveWifi()">Connect</button>
+  </div>
+  <details style="margin-top:4px">
+    <summary style="font-size:11px;color:var(--acc);cursor:pointer;user-select:none">Static IP (optional)</summary>
+    <div style="margin-top:6px">
+      <label style="font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <input type="checkbox" id="wifi-static" onchange="toggleStaticIP()"> Use static IP
+      </label>
+      <div id="static-fields" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+          <input class="sniff-input" id="wifi-ip" placeholder="IP (e.g. 192.168.1.100)">
+          <input class="sniff-input" id="wifi-gw" placeholder="Gateway (e.g. 192.168.1.1)">
+          <input class="sniff-input" id="wifi-mask" placeholder="Mask (255.255.255.0)" value="255.255.255.0">
+          <input class="sniff-input" id="wifi-dns" placeholder="DNS (e.g. 8.8.8.8)">
+        </div>
+      </div>
+    </div>
+  </details>
+</div>
+
+<div class="card">
+  <div class="card-hdr">
     <div class="card-title">Plugins <span onclick="toggleInfo('plg-info')" style="color:var(--tx3);cursor:pointer;font-size:12px;margin-left:4px" title="What are plugins?">&#9432;</span></div>
     <div class="card-meta" id="plg-count">0 installed</div>
   </div>
@@ -414,37 +428,6 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
   </div>
 
   <div style="margin-bottom:14px">
-    <div class="feat-name" style="margin-bottom:8px;display:flex;align-items:center;gap:6px">WiFi Internet <span id="wifi-stored" style="font-size:11px;font-weight:normal"></span></div>
-    <div class="feat-desc" style="margin-bottom:8px">Connect to your home WiFi for plugin downloads. Stored in NVS &mdash; survives firmware updates.</div>
-    <div style="display:flex;gap:6px;margin-bottom:6px">
-      <input class="sniff-input" id="wifi-ssid" placeholder="WiFi SSID" style="flex:1">
-      <button class="sniff-btn" onclick="scanWifi()" id="scan-btn">Scan</button>
-    </div>
-    <div id="wifi-nets" style="display:none;margin-bottom:6px;max-height:140px;overflow-y:auto;border:1px solid var(--bd);border-radius:6px;background:var(--bg2)"></div>
-    <div style="display:flex;gap:6px;margin-bottom:6px">
-      <input class="sniff-input" id="wifi-pass" placeholder="Password" type="password" style="flex:1">
-      <button class="sniff-btn" onclick="saveWifi()">Connect</button>
-    </div>
-    <div style="font-size:11px;color:var(--tx3);margin-bottom:6px" id="wifi-status">Not configured</div>
-    <details style="margin-top:4px">
-      <summary style="font-size:11px;color:var(--acc);cursor:pointer;user-select:none">Static IP (optional)</summary>
-      <div style="margin-top:6px">
-        <label style="font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:6px;margin-bottom:6px">
-          <input type="checkbox" id="wifi-static" onchange="toggleStaticIP()"> Use static IP
-        </label>
-        <div id="static-fields" style="display:none">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-            <input class="sniff-input" id="wifi-ip" placeholder="IP (e.g. 192.168.1.100)">
-            <input class="sniff-input" id="wifi-gw" placeholder="Gateway (e.g. 192.168.1.1)">
-            <input class="sniff-input" id="wifi-mask" placeholder="Mask (255.255.255.0)" value="255.255.255.0">
-            <input class="sniff-input" id="wifi-dns" placeholder="DNS (e.g. 8.8.8.8)">
-          </div>
-        </div>
-      </div>
-    </details>
-  </div>
-
-  <div style="padding-top:12px;border-top:1px solid var(--bd);margin-bottom:14px">
     <div class="feat-name" style="margin-bottom:8px">Install Plugin</div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <input class="sniff-input" id="plg-url" placeholder="Plugin JSON URL (https://...)" style="flex:1">
@@ -526,6 +509,27 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
       <button class="sniff-btn" onclick="installUpdate()" id="upd-install-btn" style="background:var(--ok);color:#fff;border-color:var(--ok)">Install</button>
     </div>
   </div>
+
+  <details style="margin-top:14px;padding-top:12px;border-top:1px solid var(--bd)">
+    <summary style="font-size:12px;color:var(--acc);cursor:pointer;user-select:none">Manual firmware upload (.bin)</summary>
+    <div style="margin-top:10px">
+      <div class="ota-drop" id="ota-drop" onclick="$('ota-file').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+        <input type="file" id="ota-file" accept=".bin" onchange="fileSelected(this.files[0])">
+        <div class="ota-icon">&#8679;</div>
+        <div class="ota-text">Tap to select firmware .bin</div>
+        <div class="ota-sub">Or drag and drop a file here</div>
+      </div>
+      <div class="ota-progress" id="ota-progress">
+        <div class="ota-bar"><div class="ota-fill" id="ota-fill"></div></div>
+        <div class="ota-status" id="ota-status">Uploading...</div>
+      </div>
+      <button class="ota-btn" id="ota-upload-btn" onclick="uploadFirmware()">Flash Firmware</button>
+      <div style="margin-top:10px;font-size:11px;color:var(--tx3);line-height:1.7">
+        Build your .bin in PlatformIO: <span style="color:var(--acc);font-family:monospace">Ctrl+Alt+B</span><br>
+        File is at: <span style="color:var(--acc);font-family:monospace">.pio/build/esp32_ext_mcp2515/firmware.bin</span>
+      </div>
+    </div>
+  </details>
 </div>
 
 <div class="card">
