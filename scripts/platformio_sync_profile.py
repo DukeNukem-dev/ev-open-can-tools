@@ -67,6 +67,13 @@ def _pick_one(active, choices, label):
     return selected[0]
 
 
+def _pick_dashboard_default(active, choices, default_choice):
+    selected = [name for name in choices if name in active]
+    if len(selected) == 1:
+        return selected[0]
+    return default_choice
+
+
 def _normalize_cppdefines(raw_defines):
     normalized = set()
     for item in raw_defines or []:
@@ -102,16 +109,24 @@ project_dir = Path(env["PROJECT_DIR"])
 config_path = project_dir / CONFIG_RELATIVE_PATH
 config_text = config_path.read_text(encoding="utf-8")
 active = _active_defines(config_text)
+project_defines = _project_option_defines(env)
+uses_dashboard = "ESP32_DASHBOARD" in project_defines
 
 _DASH_HW_MAP = {"LEGACY": 0, "HW3": 1, "HW4": 2}
 
 selected_driver = _pick_one(active, DRIVER_DEFINES, "driver define")
-uses_dashboard_hw = selected_driver == "DRIVER_ESP32_EXT_MCP2515"
-selected_vehicle = _pick_one(active, VEHICLE_DEFINES, "vehicle define")
-selected_options = [name for name in OPTIONAL_DEFINES if name in active]
+uses_dashboard_hw = uses_dashboard
+if uses_dashboard_hw:
+    selected_vehicle = _pick_dashboard_default(active, VEHICLE_DEFINES, "HW3")
+else:
+    selected_vehicle = _pick_one(active, VEHICLE_DEFINES, "vehicle define")
+selected_options = (
+    list(OPTIONAL_DEFINES)
+    if selected_driver == "DRIVER_TWAI"
+    else [name for name in OPTIONAL_DEFINES if name in active]
+)
 
 env_defines = _normalize_cppdefines(env.get("CPPDEFINES"))
-project_defines = _project_option_defines(env)
 env_driver = [name for name in DRIVER_DEFINES if name in project_defines]
 env_vehicle = [name for name in VEHICLE_DEFINES if name in env_defines]
 
@@ -136,7 +151,8 @@ if not uses_dashboard_hw and env_vehicle and env_vehicle != [selected_vehicle]:
 
 if uses_dashboard_hw:
     dash_hw_val = _DASH_HW_MAP[selected_vehicle]
-    env.Append(CPPDEFINES=[("DASH_DEFAULT_HW", str(dash_hw_val))])
+    if "DASH_DEFAULT_HW" not in env_defines and "DASH_DEFAULT_HW" not in project_defines:
+        env.Append(CPPDEFINES=[("DASH_DEFAULT_HW", str(dash_hw_val))])
     sync_defines = selected_options
 else:
     sync_defines = [selected_vehicle] + selected_options
@@ -187,5 +203,7 @@ print(
         if uses_dashboard_hw
         else selected_vehicle
     )
-    + (f", {', '.join(selected_options)}" if selected_options else "")
+    + (
+        f", {', '.join(selected_options)}" if selected_options else ""
+    )
 )

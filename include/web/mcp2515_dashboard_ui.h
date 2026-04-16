@@ -394,7 +394,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 <div class="card">
   <div class="card-hdr">
     <div class="card-title">Plugins</div>
-    <div class="card-meta" id="plg-count">0 installed</div>
+    <div class="card-meta" id="plg-count">0 / -- installed</div>
   </div>
 
   <div style="margin-bottom:14px">
@@ -410,6 +410,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 
   <div style="padding-top:12px;border-top:1px solid var(--bd);margin-bottom:14px">
     <div class="feat-name" style="margin-bottom:8px">Install Plugin</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:8px" id="plg-limit">Maximum plugins: --</div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <input class="sniff-input" id="plg-url" placeholder="Plugin JSON URL (https://...)" style="flex:1">
       <button class="sniff-btn" onclick="installPlugin()">Install</button>
@@ -815,7 +816,13 @@ function toggleDetails(idx){
 }
 async function pollPlugins(){
   try{const r=await fetch('/plugins');const d=await r.json();
-    $('plg-count').textContent=d.plugins.length+' installed';
+    const max=d.maxPlugins||0;
+    $('plg-count').textContent=max?d.plugins.length+' / '+max+' installed':d.plugins.length+' installed';
+    if($('plg-limit')){
+      const full=max&&d.plugins.length>=max;
+      $('plg-limit').textContent=max?(full?'Maximum '+max+' plugins reached. Remove one before installing another.':'Maximum '+max+' plugins total. Remove one before installing another.'):'Maximum plugins: --';
+      $('plg-limit').style.color=full?'var(--err)':'var(--tx3)';
+    }
     const el=$('plg-list');
     if(!d.plugins.length){el.innerHTML='<div style="font-size:12px;color:var(--tx3);text-align:center;padding:12px">No plugins installed</div>';}
     else{el.innerHTML=d.plugins.map((p,i)=>{
