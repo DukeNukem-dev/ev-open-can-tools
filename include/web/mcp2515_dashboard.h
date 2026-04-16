@@ -292,6 +292,8 @@ static void dashLoadPrefs()
     speedProfileLocked = prefs.getBool("sp_lock", false);
     uint8_t sp = prefs.getUChar("sp", 1);
     bool ep = prefs.getBool("eprn", true);
+    String wifiSsid = prefs.getString("wifi_ssid", "");
+    String wifiPass = prefs.getString("wifi_pass", "");
     prefs.end();
 
     canActive = true;
@@ -307,9 +309,6 @@ static void dashLoadPrefs()
         dashHandler->speedProfile = sp;
         dashHandler->enablePrint = ep;
     }
-    // Load WiFi STA credentials
-    String wifiSsid = prefs.getString("wifi_ssid", "");
-    String wifiPass = prefs.getString("wifi_pass", "");
     strlcpy(staSSID, wifiSsid.c_str(), sizeof(staSSID));
     strlcpy(staPass, wifiPass.c_str(), sizeof(staPass));
 
@@ -831,7 +830,7 @@ static bool isHandlerCanId(uint32_t id)
 
 static void handlePluginList()
 {
-    String j = "{\"plugins\":[";
+    String j = "{\"maxPlugins\":" + String(PLUGIN_MAX) + ",\"plugins\":[";
     for (uint8_t i = 0; i < pluginCount; i++)
     {
         if (i)
@@ -930,7 +929,7 @@ static void handlePluginUpload()
     if (pluginInstallJson(json, ""))
         server.send(200, "application/json", "{\"ok\":true}");
     else
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON or max plugins reached\"}");
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON or max " + String(PLUGIN_MAX) + " plugins reached\"}");
 }
 
 static void handlePluginInstallFromUrl()
@@ -968,7 +967,7 @@ static void handlePluginInstallFromUrl()
     if (pluginInstallJson(json, url))
         server.send(200, "application/json", "{\"ok\":true}");
     else
-        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON\"}");
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON or max " + String(PLUGIN_MAX) + " plugins reached\"}");
 }
 
 static void handlePluginToggle()
