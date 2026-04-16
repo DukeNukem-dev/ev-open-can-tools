@@ -38,6 +38,9 @@ static std::unique_ptr<CanDriver> appDriver;
 static std::unique_ptr<CarManagerBase> appHandler;
 static CarManagerBase *appActiveHandler = nullptr;
 
+// Plugin processing hook — set by dashboard to apply plugin rules after handler
+static void (*appPluginProcess)(const CanFrame &, CanDriver &) = nullptr;
+
 static volatile bool frameReady = true;
 static void canISR() { frameReady = true; }
 
@@ -49,6 +52,7 @@ template <typename Driver>
 static void appSetup(std::unique_ptr<Driver> drv, const char *readyMsg)
 {
     appHandler = std::make_unique<SelectedHandler>();
+    appActiveHandler = appHandler.get();
     delay(1500);
     Serial.begin(115200);
     unsigned long t0 = millis();
@@ -102,7 +106,10 @@ static void appLoop()
     {
         digitalWrite(PIN_LED, LOW);
         h->frameCount++;
+        CanFrame original = frame;
         h->handleMessage(frame, *appDriver);
+        if (appPluginProcess)
+            appPluginProcess(original, *appDriver);
     }
     digitalWrite(PIN_LED, HIGH);
 }

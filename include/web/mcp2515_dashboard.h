@@ -4,6 +4,8 @@
 
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <WebServer.h>
 #include <ArduinoOTA.h>
 #include <Update.h>
@@ -12,6 +14,7 @@
 #include <SPIFFS.h>
 #include "handlers.h"
 #include "can_helpers.h"
+#include "plugin_engine.h"
 #if defined(DRIVER_ESP32_EXT_MCP2515)
 #include "drivers/esp32_mcp2515_driver.h"
 #endif
@@ -86,8 +89,14 @@ static uint8_t hwMode = DASH_DEFAULT_HW;
 static bool canActive = true;
 static bool bypassTlssc = false;
 
+// WiFi STA (client) mode for internet access
+static char staSSID[33] = "";
+static char staPass[65] = "";
+static bool staConnected = false;
+
 static void dashSwapHandler(uint8_t mode);
 static void dashApplyFilters();
+static void dashReapplyFiltersWithPlugins();
 
 // CAN recorder
 #define REC_CAP 2000
@@ -298,6 +307,12 @@ static void dashLoadPrefs()
         dashHandler->speedProfile = sp;
         dashHandler->enablePrint = ep;
     }
+    // Load WiFi STA credentials
+    String wifiSsid = prefs.getString("wifi_ssid", "");
+    String wifiPass = prefs.getString("wifi_pass", "");
+    strlcpy(staSSID, wifiSsid.c_str(), sizeof(staSSID));
+    strlcpy(staPass, wifiPass.c_str(), sizeof(staPass));
+
     dashLog("[BOOT] Prefs loaded HW=" + String(hwMode) + " SP=" + String(sp));
     dashLog("[BOOT] canActive=YES bypassTlssc=" + String(bypassTlssc ? "YES" : "NO"));
     dashLog("[BOOT] feat: AD=" + String(feat.ADEnabled ? "ON" : "OFF") +
@@ -764,12 +779,300 @@ static void handleOtaUpload()
     }
 }
 
+// ── PLUGIN MANAGEMENT ───────────────────────────────────────────
+
+static void dashReapplyFiltersWithPlugins()
+{
+    if (!dashHandler || !dashDriver)
+        return;
+    // Merge handler + plugin filter IDs
+    uint32_t mergedIds[32];
+    uint8_t count = 0;
+    const uint32_t *hIds = dashHandler->filterIds();
+    uint8_t hCount = dashHandler->filterIdCount();
+    for (uint8_t i = 0; i < hCount && count < 32; i++)
+        mergedIds[count++] = hIds[i];
+    count += pluginGetFilterIds(mergedIds + count, 32 - count);
+    dashDriver->setFilters(mergedIds, count);
+}
+
+static const char *pluginOpName(PluginOpType t)
+{
+    switch (t)
+    {
+    case OP_SET_BIT:
+        return "set_bit";
+    case OP_SET_BYTE:
+        return "set_byte";
+    case OP_OR_BYTE:
+        return "or_byte";
+    case OP_AND_BYTE:
+        return "and_byte";
+    case OP_CHECKSUM:
+        return "checksum";
+    default:
+        return "?";
+    }
+}
+
+static bool isHandlerCanId(uint32_t id)
+{
+    if (!appActiveHandler)
+        return false;
+    const uint32_t *hIds = appActiveHandler->filterIds();
+    uint8_t hCount = appActiveHandler->filterIdCount();
+    for (uint8_t i = 0; i < hCount; i++)
+    {
+        if (hIds[i] == id)
+            return true;
+    }
+    return false;
+}
+
+static void handlePluginList()
+{
+    String j = "{\"plugins\":[";
+    for (uint8_t i = 0; i < pluginCount; i++)
+    {
+        if (i)
+            j += ",";
+        j += "{\"name\":\"" + jsonEscape(pluginStore[i].name) + "\"";
+        j += ",\"version\":\"" + jsonEscape(pluginStore[i].version) + "\"";
+        j += ",\"author\":\"" + jsonEscape(pluginStore[i].author) + "\"";
+        j += ",\"rules\":" + String(pluginStore[i].ruleCount);
+        j += ",\"enabled\":" + String(pluginStore[i].enabled ? "true" : "false");
+
+        // Rule details
+        j += ",\"details\":[";
+        for (uint8_t r = 0; r < pluginStore[i].ruleCount; r++)
+        {
+            const PluginRule &rule = pluginStore[i].rules[r];
+            if (r)
+                j += ",";
+            j += "{\"id\":" + String(rule.canId);
+            j += ",\"hex\":\"0x" + String(rule.canId, HEX) + "\"";
+            j += ",\"mux\":" + String(rule.mux);
+            j += ",\"send\":" + String(rule.sendAfter ? "true" : "false");
+            j += ",\"conflict\":" + String(isHandlerCanId(rule.canId) ? "true" : "false");
+            j += ",\"ops\":[";
+            for (uint8_t o = 0; o < rule.opCount; o++)
+            {
+                const PluginOp &op = rule.ops[o];
+                if (o)
+                    j += ",";
+                j += "{\"type\":\"" + String(pluginOpName(op.type)) + "\"";
+                if (op.type == OP_SET_BIT)
+                    j += ",\"bit\":" + String(op.index) + ",\"val\":" + String(op.value);
+                else if (op.type == OP_CHECKSUM)
+                    j += "";
+                else
+                {
+                    j += ",\"byte\":" + String(op.index) + ",\"val\":" + String(op.value);
+                    if (op.type == OP_SET_BYTE)
+                        j += ",\"mask\":" + String(op.mask);
+                }
+                j += "}";
+            }
+            j += "]}";
+        }
+        j += "]}";
+    }
+    j += "],\"wifi\":{\"connected\":";
+    j += staConnected ? "true" : "false";
+    j += ",\"ssid\":\"" + jsonEscape(staSSID) + "\"";
+    if (staConnected)
+        j += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+    j += "}}";
+    server.send(200, "application/json", j);
+}
+
+static bool pluginInstallJson(const String &json, const String &url)
+{
+    if (pluginCount >= PLUGIN_MAX)
+        return false;
+
+    PluginData temp;
+    if (!pluginParseJson(json, temp))
+        return false;
+
+    // Check for duplicate name
+    int existing = pluginFindByName(temp.name);
+    if (existing >= 0)
+        pluginRemove(existing);
+
+    // Generate filename from name
+    String fname = String(temp.name);
+    fname.replace(" ", "_");
+    fname.toLowerCase();
+    fname += ".json";
+    strlcpy(temp.filename, fname.c_str(), sizeof(temp.filename));
+    strlcpy(temp.sourceUrl, url.c_str(), sizeof(temp.sourceUrl));
+
+    if (!pluginSaveToSpiffs(json, temp.filename))
+        return false;
+
+    pluginStore[pluginCount] = temp;
+    pluginCount++;
+
+    dashReapplyFiltersWithPlugins();
+    dashLog("[PLG] Installed: " + String(temp.name) + " (" + String(temp.ruleCount) + " rules)");
+    return true;
+}
+
+static void handlePluginUpload()
+{
+    String json = server.arg("plain");
+    if (json.length() == 0)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"empty body\"}");
+        return;
+    }
+    if (pluginInstallJson(json, ""))
+        server.send(200, "application/json", "{\"ok\":true}");
+    else
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON or max plugins reached\"}");
+}
+
+static void handlePluginInstallFromUrl()
+{
+    String url = server.arg("url");
+    if (url.length() == 0)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"no url\"}");
+        return;
+    }
+    if (!staConnected)
+    {
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"WiFi not connected. Configure WiFi first.\"}");
+        return;
+    }
+
+    HTTPClient http;
+    WiFiClientSecure client;
+    client.setInsecure(); // skip cert verification for simplicity
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setTimeout(15000);
+    http.begin(client, url);
+    int code = http.GET();
+    if (code != HTTP_CODE_OK)
+    {
+        String err = "HTTP " + String(code);
+        http.end();
+        dashLog("[PLG] Download failed: " + err);
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"" + err + "\"}");
+        return;
+    }
+    String json = http.getString();
+    http.end();
+
+    if (pluginInstallJson(json, url))
+        server.send(200, "application/json", "{\"ok\":true}");
+    else
+        server.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid plugin JSON\"}");
+}
+
+static void handlePluginToggle()
+{
+    if (!server.hasArg("idx"))
+    {
+        server.send(400, "application/json", "{\"ok\":false}");
+        return;
+    }
+    uint8_t idx = server.arg("idx").toInt();
+    if (idx < pluginCount)
+    {
+        pluginStore[idx].enabled = !pluginStore[idx].enabled;
+        dashReapplyFiltersWithPlugins();
+        dashLog("[PLG] " + String(pluginStore[idx].name) + " " +
+                String(pluginStore[idx].enabled ? "enabled" : "disabled"));
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handlePluginRemove()
+{
+    if (!server.hasArg("idx"))
+    {
+        server.send(400, "application/json", "{\"ok\":false}");
+        return;
+    }
+    uint8_t idx = server.arg("idx").toInt();
+    if (idx < pluginCount)
+    {
+        String name = pluginStore[idx].name;
+        pluginRemove(idx);
+        dashReapplyFiltersWithPlugins();
+        dashLog("[PLG] Removed: " + name);
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// ── WIFI STA ────────────────────────────────────────────────────
+
+static void dashConnectSTA()
+{
+    if (strlen(staSSID) == 0)
+        return;
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(DASH_SSID, DASH_PASS);
+    WiFi.begin(staSSID, staPass);
+    dashLog("[WIFI] Connecting to " + String(staSSID) + "...");
+}
+
+static void dashCheckWifi()
+{
+    static unsigned long lastCheck = 0;
+    if (strlen(staSSID) == 0)
+        return;
+    if (millis() - lastCheck < 5000)
+        return;
+    lastCheck = millis();
+
+    bool connected = WiFi.status() == WL_CONNECTED;
+    if (connected != staConnected)
+    {
+        staConnected = connected;
+        if (connected)
+            dashLog("[WIFI] Connected to " + String(staSSID) + " IP: " + WiFi.localIP().toString());
+        else
+            dashLog("[WIFI] Disconnected from " + String(staSSID));
+    }
+}
+
+static void handleWifiConfig()
+{
+    if (server.hasArg("ssid"))
+    {
+        String ssid = server.arg("ssid");
+        String pass = server.arg("pass");
+        strlcpy(staSSID, ssid.c_str(), sizeof(staSSID));
+        strlcpy(staPass, pass.c_str(), sizeof(staPass));
+
+        prefs.begin(PREFS_NS, false);
+        prefs.putString("wifi_ssid", ssid);
+        prefs.putString("wifi_pass", pass);
+        prefs.end();
+
+        staConnected = false;
+        dashConnectSTA();
+    }
+    server.send(200, "application/json", "{\"ok\":true}");
+}
+
+// ── Plugin frame callback wrapper ───────────────────────────────
+
+static void dashPluginProcess(const CanFrame &frame, CanDriver &driver)
+{
+    pluginProcessFrame(frame, driver);
+}
+
 static void webTask(void *)
 {
     for (;;)
     {
         ArduinoOTA.handle();
         server.handleClient();
+        dashCheckWifi();
         vTaskDelay(pdMS_TO_TICKS(2));
     }
 }
@@ -836,8 +1139,30 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     dashSwapHandler(hwMode);
     dashApplyFilters();
 
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(DASH_SSID, DASH_PASS);
+    // Load plugins from SPIFFS
+    pluginLoadAll();
+    if (pluginCount > 0)
+    {
+        dashLog("[PLG] Loaded " + String(pluginCount) + " plugin(s)");
+        dashReapplyFiltersWithPlugins();
+    }
+
+    // Set plugin processing hook
+    appPluginProcess = dashPluginProcess;
+
+    // WiFi setup: AP+STA if STA credentials configured, AP-only otherwise
+    if (strlen(staSSID) > 0)
+    {
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.softAP(DASH_SSID, DASH_PASS);
+        WiFi.begin(staSSID, staPass);
+        dashLog("[WIFI] AP+STA mode, connecting to " + String(staSSID));
+    }
+    else
+    {
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(DASH_SSID, DASH_PASS);
+    }
     Serial.printf("[WIFI] AP: %s  IP: %s\n", DASH_SSID, WiFi.softAPIP().toString().c_str());
 
     xTaskCreatePinnedToCore(webTask, "web", 8192, nullptr, 1, nullptr, 0);
@@ -866,6 +1191,12 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     server.on("/disable", HTTP_POST, handleDisable);
     server.on("/reboot", HTTP_POST, handleReboot);
     server.on("/update", HTTP_POST, handleOtaResult, handleOtaUpload);
+    server.on("/plugins", HTTP_GET, handlePluginList);
+    server.on("/plugin_upload", HTTP_POST, handlePluginUpload);
+    server.on("/plugin_install", HTTP_POST, handlePluginInstallFromUrl);
+    server.on("/plugin_toggle", HTTP_POST, handlePluginToggle);
+    server.on("/plugin_remove", HTTP_POST, handlePluginRemove);
+    server.on("/wifi_config", HTTP_POST, handleWifiConfig);
 
     server.begin();
     Serial.println("[WEB] Dashboard: http://192.168.4.1");

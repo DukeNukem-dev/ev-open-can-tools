@@ -21,6 +21,7 @@ For any use beyond private testing, you are responsible for complying with all a
 - **Speed Profiles** — Maps the follow-distance stalk setting to Auto driving aggressiveness profiles (Chill / Normal / Hurry / Max / Sloth)
 - **ISA Speed Chime Suppression** — Mutes the Intelligent Speed Assistance audible chime while keeping the visual indicator active (HW4, optional)
 - **Emergency Vehicle Detection** — Enables approaching emergency vehicle detection on Auto driving v14 (HW4, optional)
+- **Plugin System** — Install JSON-based CAN modification plugins via the web dashboard (URL, file upload, or paste). Includes a detail view to inspect rules and conflict detection when plugins overlap with base firmware
 - **Web Interface** — WiFi hotspot on ESP32 boards for real-time monitoring, runtime feature toggles, and over-the-air firmware updates
 
 Feature details are maintained in this repository.
@@ -52,6 +53,7 @@ This project depends on the following open-source libraries. Their full license 
 | [autowp/arduino-mcp2515](https://github.com/autowp/arduino-mcp2515) | MIT | (c) 2013 Seeed Technology Inc., (c) 2016 Dmitry |
 | [adafruit/Adafruit_CAN](https://github.com/adafruit/Adafruit_CAN) | MIT | (c) 2017 Sandeep Mistry |
 | [espressif/esp-idf](https://github.com/espressif/esp-idf) (TWAI driver) | Apache 2.0 | (c) 2015-2025 Espressif Systems (Shanghai) CO LTD |
+| [bblanchon/ArduinoJson](https://github.com/bblanchon/ArduinoJson) | MIT | (c) 2014-2024 Benoit BLANCHON |
 
 ## License
 

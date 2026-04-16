@@ -121,6 +121,8 @@ jobs:
         run: pip install ${{ matrix.extra_python_packages }}
       - run: python scripts/platformio_set_profile.py ${{ matrix.profile }}
       - run: pio run -e ${{ matrix.env }}
+        env:
+          SKIP_DASH_CREDENTIAL_CHECK: "1"
       - if: matrix.artifact_path != ''
         uses: actions/upload-artifact@v4
         with:
@@ -165,17 +167,26 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
+      - name: Rename firmware files to unique names
+        run: |
+          for dir in release-assets/firmware-*/; do
+            name=$(basename "$dir")
+            for f in "$dir"*; do
+              ext="${f##*.}"
+              mv "$f" "release-assets/${name}.${ext}"
+            done
+          done
       - uses: softprops/action-gh-release@v2
         with:
           name: Release ${{ github.ref_name }}
           body_path: CHANGELOG.md
           files: |
-            release-assets/firmware-rp2040/firmware.uf2
-            release-assets/firmware-m4/firmware.bin
-            release-assets/firmware-esp32/firmware.bin
-            release-assets/firmware-m5stack/firmware.bin
-            release-assets/firmware-esp32-featherwing/firmware.bin
-            release-assets/firmware-esp32-ext-mcp2515/firmware.bin
+            release-assets/firmware-rp2040.uf2
+            release-assets/firmware-m4.bin
+            release-assets/firmware-esp32.bin
+            release-assets/firmware-m5stack.bin
+            release-assets/firmware-esp32-featherwing.bin
+            release-assets/firmware-esp32-ext-mcp2515.bin
 
   notify-discord-release:
     if: startsWith(github.ref, 'refs/tags/v')
