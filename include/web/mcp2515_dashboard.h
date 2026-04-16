@@ -101,7 +101,7 @@ static bool staConnected = false;
 static bool staStaticIP = false;
 static bool updateBetaChannel = false;
 static bool autoUpdateEnabled = false;
-static bool autoUpdateDone = false;          // one-shot per boot
+static bool autoUpdateDone = false;            // one-shot per boot
 static unsigned long autoUpdateEligibleAt = 0; // millis() at which auto-check may fire
 static IPAddress staIP(0, 0, 0, 0);
 static IPAddress staGW(0, 0, 0, 0);
@@ -1253,16 +1253,24 @@ static void handleSettingsExport()
 
     if (p.begin(PREFS_NS, false))
     {
-        if (p.isKey("ap_ssid")) apSsid = p.getString("ap_ssid", "");
-        if (p.isKey("ap_pass")) apPass = p.getString("ap_pass", "");
+        if (p.isKey("ap_ssid"))
+            apSsid = p.getString("ap_ssid", "");
+        if (p.isKey("ap_pass"))
+            apPass = p.getString("ap_pass", "");
         apHid = p.getBool("ap_hidden", false);
-        if (p.isKey("wifi_ssid")) wSsid = p.getString("wifi_ssid", "");
-        if (p.isKey("wifi_pass")) wPass = p.getString("wifi_pass", "");
+        if (p.isKey("wifi_ssid"))
+            wSsid = p.getString("wifi_ssid", "");
+        if (p.isKey("wifi_pass"))
+            wPass = p.getString("wifi_pass", "");
         wStatic = p.getBool("wifi_static", false);
-        if (p.isKey("wifi_ip")) wIp = p.getString("wifi_ip", "");
-        if (p.isKey("wifi_gw")) wGw = p.getString("wifi_gw", "");
-        if (p.isKey("wifi_mask")) wMask = p.getString("wifi_mask", "");
-        if (p.isKey("wifi_dns")) wDns = p.getString("wifi_dns", "");
+        if (p.isKey("wifi_ip"))
+            wIp = p.getString("wifi_ip", "");
+        if (p.isKey("wifi_gw"))
+            wGw = p.getString("wifi_gw", "");
+        if (p.isKey("wifi_mask"))
+            wMask = p.getString("wifi_mask", "");
+        if (p.isKey("wifi_dns"))
+            wDns = p.getString("wifi_dns", "");
         beta = p.getBool("upd_beta", false);
         p.end();
     }
@@ -1316,9 +1324,12 @@ static void handleSettingsImport()
     {
         const char *s = doc["ap"]["ssid"] | "";
         const char *pw = doc["ap"]["pass"] | "";
-        if (strlen(s) > 0) p.putString("ap_ssid", s);
-        if (strlen(pw) >= 8) p.putString("ap_pass", pw);
-        if (doc["ap"]["hidden"].is<bool>()) p.putBool("ap_hidden", doc["ap"]["hidden"].as<bool>());
+        if (strlen(s) > 0)
+            p.putString("ap_ssid", s);
+        if (strlen(pw) >= 8)
+            p.putString("ap_pass", pw);
+        if (doc["ap"]["hidden"].is<bool>())
+            p.putBool("ap_hidden", doc["ap"]["hidden"].as<bool>());
     }
     if (doc["wifi"].is<JsonObject>())
     {
@@ -1440,7 +1451,8 @@ static void parseVersion(const String &v, int &maj, int &min, int &pat, int &pre
     preNum = 0;
     int i = 0;
     int len = v.length();
-    auto readInt = [&](int &out) {
+    auto readInt = [&](int &out)
+    {
         int val = 0;
         bool any = false;
         while (i < len && v[i] >= '0' && v[i] <= '9')
