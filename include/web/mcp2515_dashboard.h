@@ -325,6 +325,10 @@ static void dashApplyRuntimeState()
         if (!canActive || !feat.ADEnabled)
             dashHandler->ADEnabled = false;
     }
+
+#if defined(DASH_RGB_STATUS_LED)
+    appRefreshStatusLed();
+#endif
 }
 
 // Store config
@@ -344,6 +348,26 @@ static void dashSavePrefs()
     prefs.putUChar("f_h4o", feat.hw4Offset);
     prefs.putBool("sp_lock", (bool)speedProfileLocked);
     prefs.end();
+}
+
+static void dashSetCanActive(bool active, const char *reason = nullptr)
+{
+    bool changed = canActive != active;
+    canActive = active;
+    dashApplyRuntimeState();
+    dashSavePrefs();
+    if (changed)
+    {
+        String msg = String("[CFG] Injection ") + (active ? "ON" : "OFF");
+        if (reason && *reason)
+            msg += String(" via ") + reason;
+        dashLog(msg);
+    }
+}
+
+static void dashToggleCanActive(const char *reason = nullptr)
+{
+    dashSetCanActive(!canActive, reason);
 }
 
 static void dashLoadPrefs()
@@ -849,10 +873,7 @@ static void handleRecDownload()
 
 static void handleDisable()
 {
-    canActive = false;
-    dashApplyRuntimeState();
-    dashSavePrefs();
-    dashLog("[CFG] Stop injecting");
+    dashSetCanActive(false, "dashboard");
     server.send(200, "text/plain", "Injection stopped.");
 }
 
