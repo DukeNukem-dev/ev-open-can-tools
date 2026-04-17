@@ -694,6 +694,31 @@ async function runPoll(name,fn){
   try{return await fn();}finally{pollLocks[name]=false;}
 }
 
+function waitMs(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+
+function actionErrorMessage(e,fallback){
+  if(!e)return fallback;
+  if(e.name==='AbortError'||e.name==='SyntaxError'||e.message==='Failed to fetch'||e.message==='Empty response')return fallback;
+  return e.message||fallback;
+}
+
+async function fetchJsonWithTimeout(url,options,timeoutMs){
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),timeoutMs||2500);
+  try{
+    const opts=Object.assign({},options||{});
+    opts.signal=ctrl.signal;
+    const r=await fetch(url,opts);
+    const text=await r.text();
+    if(!text||!text.trim())throw new Error(r.ok?'Empty response':('HTTP '+r.status));
+    const d=JSON.parse(text);
+    if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+    return d;
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 function dashConfirmResolve(ok){
   if(!dashConfirmState)return;
   const resolve=dashConfirmState.resolve;
@@ -1129,40 +1154,67 @@ async function saveWifi(){
 async function installPlugin(){
   const url=$('plg-url').value;
   if(!url){$('plg-status').textContent='Enter URL';return;}
+  const beforeSig=pluginStateSignature(installedPlugins);
   $('plg-status').textContent='Downloading...';$('plg-status').style.color='var(--acc)';
-  try{const r=await fetch('/plugin_install',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)});
-    const d=await r.json();
-    if(d.ok){$('plg-url').value='';$('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';pollPlugins();}
-    else{$('plg-status').textContent=d.error||'Error';$('plg-status').style.color='var(--err)';}
-  }catch(e){$('plg-status').textContent='Connection error';$('plg-status').style.color='var(--err)';}
+  try{
+    await fetchJsonWithTimeout('/plugin_install',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)},20000);
+    $('plg-url').value='';
+    try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
+    $('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';
+  }catch(e){
+    if(await refreshPluginsAfterAction(beforeSig)){
+      $('plg-url').value='';
+      $('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';
+    }else{$('plg-status').textContent=actionErrorMessage(e,'Connection error');$('plg-status').style.color='var(--err)';}
+  }
 }
 async function uploadPlugin(file){
   if(!file)return;
+  const beforeSig=pluginStateSignature(installedPlugins);
   $('plg-status').textContent='Uploading...';$('plg-status').style.color='var(--acc)';
-  try{const text=await file.text();
-    const r=await fetch('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:text});
-    const d=await r.json();
-    if(d.ok){$('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';pollPlugins();}
-    else{$('plg-status').textContent=d.error||'Invalid JSON';$('plg-status').style.color='var(--err)';}
-  }catch(e){$('plg-status').textContent='Error';$('plg-status').style.color='var(--err)';}
+  try{
+    const text=await file.text();
+    await fetchJsonWithTimeout('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:text},5000);
+    try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
+    $('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';
+  }catch(e){
+    if(await refreshPluginsAfterAction(beforeSig)){
+      $('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';
+    }else{$('plg-status').textContent=actionErrorMessage(e,'Error');$('plg-status').style.color='var(--err)';}
+  }
 }
 async function pastePlugin(){
   const text=$('plg-paste').value.trim();
   if(!text){$('plg-status').textContent='Paste JSON first';$('plg-status').style.color='var(--err)';return;}
   try{JSON.parse(text);}catch(e){$('plg-status').textContent='Invalid JSON: '+e.message;$('plg-status').style.color='var(--err)';return;}
+  const beforeSig=pluginStateSignature(installedPlugins);
   $('plg-status').textContent='Installing...';$('plg-status').style.color='var(--acc)';
-  try{const r=await fetch('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:text});
-    const d=await r.json();
-    if(d.ok){$('plg-paste').value='';$('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';pollPlugins();}
-    else{$('plg-status').textContent=d.error||'Invalid plugin';$('plg-status').style.color='var(--err)';}
-  }catch(e){$('plg-status').textContent='Connection error';$('plg-status').style.color='var(--err)';}
+  try{
+    await fetchJsonWithTimeout('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:text},5000);
+    $('plg-paste').value='';
+    try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
+    $('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';
+  }catch(e){
+    if(await refreshPluginsAfterAction(beforeSig)){
+      $('plg-paste').value='';
+      $('plg-status').textContent='Installed!';$('plg-status').style.color='var(--ok)';
+    }else{$('plg-status').textContent=actionErrorMessage(e,'Connection error');$('plg-status').style.color='var(--err)';}
+  }
 }
 async function togglePlugin(idx){
-  try{await fetch('/plugin_toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+idx});pollPlugins();}catch(e){}
+  const beforeSig=pluginStateSignature(installedPlugins);
+  try{
+    await fetchJsonWithTimeout('/plugin_toggle',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+idx},4000);
+    try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
+  }catch(e){await refreshPluginsAfterAction(beforeSig);}
 }
 async function removePlugin(idx){
   if(!await dashConfirm('Remove this plugin?','Remove plugin','Remove'))return;
-  try{await fetch('/plugin_remove',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+idx});pollPlugins();}catch(e){}
+  const beforeSig=pluginStateSignature(installedPlugins);
+  try{
+    await fetchJsonWithTimeout('/plugin_remove',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'idx='+idx},4000);
+    try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
+  }catch(e){await refreshPluginsAfterAction(beforeSig);}
 }
 function fmtOp(o){
   if(o.type==='set_bit') return 'set_bit('+o.bit+', '+(o.val?'true':'false')+')';
@@ -1195,46 +1247,72 @@ function toggleInfo(id){
   var el=$(id);
   if(el)el.style.display=el.style.display==='none'?'block':'none';
 }
+
+function pluginStateSignature(list){
+  return JSON.stringify((list||[]).map(p=>[p&&p.name||'',p&&p.version||'',!!(p&&p.enabled),p&&p.rules||0,p&&p.author||'']));
+}
+
+function renderPluginsState(d){
+  installedPlugins=d.plugins||[];
+  const nextOpen={};
+  installedPlugins.forEach(p=>{if(p&&p.name&&pluginDetailOpen[p.name])nextOpen[p.name]=true;});
+  pluginDetailOpen=nextOpen;
+  const max=d.maxPlugins||0;
+  $('plg-count').textContent=max?installedPlugins.length+' / '+max+' installed':installedPlugins.length+' installed';
+  if($('plg-limit')){
+    const full=max&&installedPlugins.length>=max;
+    $('plg-limit').textContent=max?(full?'Maximum '+max+' plugins reached. Remove one before installing another.':'Maximum '+max+' plugins total. Remove one before installing another.'):'Maximum plugins: --';
+    $('plg-limit').style.color=full?'var(--err)':'var(--tx3)';
+  }
+  const el=$('plg-list');
+  if(!installedPlugins.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--tx3);text-align:center;padding:12px">No plugins installed</div>';
+    return;
+  }
+  el.innerHTML=installedPlugins.map((p,i)=>{
+    let hasConflict=p.details&&p.details.some(r=>r.conflict);
+    let detailsOpen=!!pluginDetailOpen[p.name];
+    let row='<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--bd)">';
+    row+='<div class="feat-row"><div class="feat-info" style="cursor:pointer" onclick="toggleDetails('+i+')">';
+    row+='<div class="feat-name">'+p.name+' <span style="color:var(--tx3);font-size:11px">v'+p.version+'</span>';
+    if(hasConflict) row+=' <span style="color:var(--err);font-size:11px">&#9888;</span>';
+    row+='</div>';
+    row+='<div class="feat-desc">'+p.rules+' rule'+(p.rules!==1?'s':'')+(p.author?' &bull; '+p.author:'')+' &bull; <span style="color:var(--acc);cursor:pointer">details</span></div>';
+    row+='</div>';
+    row+='<label class="tgl"><input type="checkbox" '+(p.enabled?'checked':'')+' onchange="togglePlugin('+i+')"><div class="tgl-track"><div class="tgl-thumb"></div></div></label>';
+    row+='<button onclick="peLoadInstalledPlugin('+i+')" style="margin-left:8px;padding:4px 8px;border:1px solid var(--bd);border-radius:5px;background:transparent;color:var(--acc);cursor:pointer;font-size:10px;font-family:inherit">Edit</button>';
+    row+='<button onclick="removePlugin('+i+')" style="margin-left:8px;padding:4px 8px;border:1px solid var(--errBd);border-radius:5px;background:transparent;color:var(--err);cursor:pointer;font-size:10px;font-family:inherit">X</button></div>';
+    if(p.details){
+      row+='<div id="plg-det-'+i+'" style="display:'+(detailsOpen?'block':'none')+'">';
+      if(hasConflict) row+='<div style="margin-top:6px;padding:6px 8px;background:var(--errBg,#3a1a1a);border:1px solid var(--errBd);border-radius:6px;font-size:11px;color:var(--err)">&#9888; Some CAN IDs overlap with base firmware. Plugin rules run <b>after</b> the original handler. Both will send modified frames.</div>';
+      row+=renderPluginDetails(p.details);
+      row+='</div>';
+    }
+    row+='</div>';
+    return row;
+  }).join('');
+}
+
+async function refreshPluginsNow(){
+  const d=await fetchJsonWithTimeout('/plugins',null,2500);
+  renderPluginsState(d);
+  return d;
+}
+
+async function refreshPluginsAfterAction(beforeSig){
+  for(let i=0;i<4;i++){
+    if(i)await waitMs(250);
+    try{
+      await refreshPluginsNow();
+      if(pluginStateSignature(installedPlugins)!==beforeSig)return true;
+    }catch(e){}
+  }
+  return false;
+}
+
 async function pollPlugins(){
   return runPoll('plugins',async()=>{
-    try{
-      const d=await fetchPollJson('/plugins',2000);
-      installedPlugins=d.plugins||[];
-      const nextOpen={};
-      installedPlugins.forEach(p=>{if(p&&p.name&&pluginDetailOpen[p.name])nextOpen[p.name]=true;});
-      pluginDetailOpen=nextOpen;
-      const max=d.maxPlugins||0;
-      $('plg-count').textContent=max?installedPlugins.length+' / '+max+' installed':installedPlugins.length+' installed';
-      if($('plg-limit')){
-        const full=max&&installedPlugins.length>=max;
-        $('plg-limit').textContent=max?(full?'Maximum '+max+' plugins reached. Remove one before installing another.':'Maximum '+max+' plugins total. Remove one before installing another.'):'Maximum plugins: --';
-        $('plg-limit').style.color=full?'var(--err)':'var(--tx3)';
-      }
-      const el=$('plg-list');
-      if(!installedPlugins.length){el.innerHTML='<div style="font-size:12px;color:var(--tx3);text-align:center;padding:12px">No plugins installed</div>';}
-      else{el.innerHTML=installedPlugins.map((p,i)=>{
-        let hasConflict=p.details&&p.details.some(r=>r.conflict);
-        let detailsOpen=!!pluginDetailOpen[p.name];
-        let row='<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--bd)">';
-        row+='<div class="feat-row"><div class="feat-info" style="cursor:pointer" onclick="toggleDetails('+i+')">';
-        row+='<div class="feat-name">'+p.name+' <span style="color:var(--tx3);font-size:11px">v'+p.version+'</span>';
-        if(hasConflict) row+=' <span style="color:var(--err);font-size:11px">&#9888;</span>';
-        row+='</div>';
-        row+='<div class="feat-desc">'+p.rules+' rule'+(p.rules!==1?'s':'')+(p.author?' &bull; '+p.author:'')+' &bull; <span style="color:var(--acc);cursor:pointer">details</span></div>';
-        row+='</div>';
-        row+='<label class="tgl"><input type="checkbox" '+(p.enabled?'checked':'')+' onchange="togglePlugin('+i+')"><div class="tgl-track"><div class="tgl-thumb"></div></div></label>';
-        row+='<button onclick="peLoadInstalledPlugin('+i+')" style="margin-left:8px;padding:4px 8px;border:1px solid var(--bd);border-radius:5px;background:transparent;color:var(--acc);cursor:pointer;font-size:10px;font-family:inherit">Edit</button>';
-        row+='<button onclick="removePlugin('+i+')" style="margin-left:8px;padding:4px 8px;border:1px solid var(--errBd);border-radius:5px;background:transparent;color:var(--err);cursor:pointer;font-size:10px;font-family:inherit">X</button></div>';
-        if(p.details){
-          row+='<div id="plg-det-'+i+'" style="display:'+(detailsOpen?'block':'none')+'">';
-          if(hasConflict) row+='<div style="margin-top:6px;padding:6px 8px;background:var(--errBg,#3a1a1a);border:1px solid var(--errBd);border-radius:6px;font-size:11px;color:var(--err)">&#9888; Some CAN IDs overlap with base firmware. Plugin rules run <b>after</b> the original handler. Both will send modified frames.</div>';
-          row+=renderPluginDetails(p.details);
-          row+='</div>';
-        }
-        row+='</div>';
-        return row;
-      }).join('');}
-    }catch(e){}
+    try{renderPluginsState(await fetchPollJson('/plugins',2000));}catch(e){}
   });
 }
 
@@ -1562,12 +1640,19 @@ async function peInstall(){
       if(!await dashConfirm('A plugin named "'+obj.name+'" already exists. Overwrite?','Overwrite plugin','Overwrite'))return;
     }
   }catch(e){}
+  const beforeSig=pluginStateSignature(installedPlugins);
   peSetStatus('Installing...','acc');
-  try{const r=await fetch('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
-    const d=await r.json();
-    if(d.ok){peLoadedPluginName=obj.name;peSetStatus('Installed!','ok');pollPlugins();}
-    else{peSetStatus(d.error||'Install failed','err');}
-  }catch(e){peSetStatus('Connection error','err');}
+  try{
+    await fetchJsonWithTimeout('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)},5000);
+    peLoadedPluginName=obj.name;
+    try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
+    peSetStatus('Installed!','ok');
+  }catch(e){
+    if(await refreshPluginsAfterAction(beforeSig)){
+      peLoadedPluginName=obj.name;
+      peSetStatus('Installed!','ok');
+    }else{peSetStatus(actionErrorMessage(e,'Connection error'),'err');}
+  }
 }
 async function peStartTest(){
   if(!peState.rules.length){peSetTestStatus('Add a rule first','err');return;}
