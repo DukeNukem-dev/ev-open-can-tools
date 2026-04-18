@@ -1,6 +1,6 @@
 name: General Issue
 description: Create a new issue
-title: "[TYPE] "
+title: ""
 labels: []
 body:
   - type: dropdown
@@ -33,6 +33,53 @@ body:
       placeholder: What happened? What do you expect?
     validations:
       required: true
+
+  - type: dropdown
+    id: hw_version
+    attributes:
+      label: Vehicle Hardware Version
+      description: Which Tesla hardware generation does your car have?
+      options:
+        - Legacy (HW3 retrofit)
+        - HW3
+        - HW4
+        - Other / Unknown
+    validations:
+      required: false
+
+  - type: dropdown
+    id: board
+    attributes:
+      label: Board / Hardware
+      description: Which board are you using?
+      options:
+        - Adafruit Feather RP2040 CAN
+        - Adafruit Feather M4 CAN Express
+        - Generic ESP32 dev board
+        - LILYGO TCAN485
+        - M5Stack Atom CAN Base
+        - M5Stack AtomS3 Mini CAN Base
+        - Feather ESP32 V2 + external MCP2515
+        - ESP32-S3 + external MCP2515
+        - Waveshare ESP32-S3 RS485/CAN
+        - Other
+    validations:
+      required: false
+
+  - type: textarea
+    id: profile
+    attributes:
+      label: platformio_profile.h
+      description: Paste the contents of your `platformio_profile.h` file (omit WiFi passwords if you like)
+      placeholder: |
+        #pragma once
+
+        // #define DRIVER_MCP2515
+        // #define HW3
+        // ...
+      render: cpp
+    validations:
+      required: false
 
   - type: textarea
     id: steps
