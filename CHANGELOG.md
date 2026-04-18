@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Dashboard Features card no longer exposes Nag Suppression or Summon EU Unlock; those overrides can now be handled through plugins instead
+- Dashboard Features card now only exposes Enable Logging; the other vehicle overrides are no longer shown there
 
 ## [2.2.0] - 2026-04-18
 

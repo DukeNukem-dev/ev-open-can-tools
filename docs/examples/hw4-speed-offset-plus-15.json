@@ -1,13 +1,13 @@
 {
-  "name": "Nag Suppression",
+  "name": "HW4 Speed Offset +15",
   "version": "1.0.0",
   "author": "ev-open-can-tools",
   "rules": [
     {
       "id": 1021,
-      "mux": 1,
+      "mux": 2,
       "ops": [
-        { "type": "set_bit", "bit": 19, "val": 0 }
+        { "type": "set_byte", "byte": 1, "val": 21, "mask": 63 }
       ]
     }
   ]

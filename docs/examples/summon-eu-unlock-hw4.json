@@ -7,6 +7,7 @@
       "id": 1021,
       "mux": 1,
       "ops": [
+        { "type": "set_bit", "bit": 19, "val": 0 },
         { "type": "set_bit", "bit": 47, "val": 1 }
       ]
     }
