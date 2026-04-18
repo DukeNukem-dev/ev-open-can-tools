@@ -35,8 +35,6 @@ void setup()
 #ifdef ESP32_DASHBOARD
     delay(2000);
     mcpDashboardSetup(appHandler.get(), appDriver.get());
-    appHandler->onFrame = mcpDashOnFrame;
-    appHandler->onSend = mcpDashOnSend;
 #endif
 #elif defined(DRIVER_ESP32_EXT_MCP2515)
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, PIN_CAN_CS);
@@ -45,8 +43,6 @@ void setup()
     MCP2515 *mcpPtr = &drv->mcp();
     appSetup<ESP32_MCP2515Driver>(std::move(drv), "ESP32 + MCP2515 ready @ 500k");
 #ifdef ESP32_DASHBOARD
-    appHandler->onFrame = mcpDashOnFrame;
-    appHandler->onSend = mcpDashOnSend;
     mcpDashboardSetup(appHandler.get(), appDriver.get(), mcpPtr);
 #endif
 #elif defined(DRIVER_SAME51)
@@ -72,8 +68,6 @@ void setup()
 #ifdef ESP32_DASHBOARD
     delay(2000);
     mcpDashboardSetup(appHandler.get(), appDriver.get());
-    appHandler->onFrame = mcpDashOnFrame;
-    appHandler->onSend = mcpDashOnSend;
 #endif
 #endif
 }

@@ -168,6 +168,56 @@ struct PluginTestState
 };
 static PluginTestState pluginTestState;
 
+enum DashWriteProbeState : uint8_t
+{
+    kDashWriteProbeIdle = 0,
+    kDashWriteProbePending = 1,
+    kDashWriteProbeMatch = 2,
+    kDashWriteProbeDifferent = 3,
+    kDashWriteProbeFailed = 4,
+};
+
+struct DashWriteProbe
+{
+    bool active = false;
+    bool hasRx = false;
+    uint8_t state = kDashWriteProbeIdle;
+    uint32_t id = 0;
+    int8_t mux = -1;
+    uint8_t txDlc = 0;
+    uint8_t rxDlc = 0;
+    uint8_t txData[8] = {};
+    uint8_t rxData[8] = {};
+    unsigned long txMs = 0;
+    unsigned long rxMs = 0;
+};
+static DashWriteProbe dashWriteProbe;
+
+static int8_t dashFrameMux(const CanFrame &frame)
+{
+    if ((frame.id == 1006 || frame.id == 1021) && frame.dlc > 0)
+        return static_cast<int8_t>(readMuxID(frame));
+    return -1;
+}
+
+static void dashResetWriteProbe()
+{
+    dashWriteProbe = {};
+    dashWriteProbe.mux = -1;
+    dashWriteProbe.state = kDashWriteProbeIdle;
+}
+
+static bool dashWriteProbeMatches(const CanFrame &frame)
+{
+    if (!dashWriteProbe.active || dashWriteProbe.id != frame.id)
+        return false;
+
+    int8_t mux = dashFrameMux(frame);
+    if (dashWriteProbe.mux < 0)
+        return mux < 0;
+    return mux == dashWriteProbe.mux;
+}
+
 static const char *decodeCanId(uint32_t id)
 {
     switch (id)
@@ -231,8 +281,9 @@ static void dashLog(const String &s)
 // Public hooks
 static void mcpDashOnFrame(const CanFrame &f)
 {
+    unsigned long now = millis();
     rxCount++;
-    lastFrameMs = millis();
+    lastFrameMs = now;
     canOnline = true;
     fpsFrames++;
     sniffPush(f);
@@ -258,22 +309,46 @@ static void mcpDashOnFrame(const CanFrame &f)
                 recActive = false;
         }
     }
+    if (dashWriteProbe.active && dashWriteProbe.state != kDashWriteProbeFailed && dashWriteProbeMatches(f))
+    {
+        dashWriteProbe.hasRx = true;
+        dashWriteProbe.rxMs = now;
+        dashWriteProbe.rxDlc = (f.dlc <= 8) ? f.dlc : 8;
+        memset(dashWriteProbe.rxData, 0, sizeof(dashWriteProbe.rxData));
+        memcpy(dashWriteProbe.rxData, f.data, dashWriteProbe.rxDlc);
+        bool same = dashWriteProbe.txDlc == dashWriteProbe.rxDlc &&
+                    memcmp(dashWriteProbe.txData, dashWriteProbe.rxData, dashWriteProbe.txDlc) == 0;
+        dashWriteProbe.state = same ? kDashWriteProbeMatch : kDashWriteProbeDifferent;
+    }
 }
 
-static void mcpDashOnSend(uint8_t mux, bool ok)
+static void mcpDashOnTxFrame(const CanFrame &frame, bool ok)
 {
     txCount++;
+    int8_t mux = dashFrameMux(frame);
     if (!ok)
     {
         txErrCount++;
-        if (mux < 4)
+        if (mux >= 0 && mux < 4)
             muxErr[mux]++;
     }
-    else
+    else if (mux >= 0 && mux < 4)
     {
-        if (mux < 4)
-            muxTx[mux]++;
+        muxTx[mux]++;
     }
+
+    dashWriteProbe.active = true;
+    dashWriteProbe.hasRx = false;
+    dashWriteProbe.state = ok ? kDashWriteProbePending : kDashWriteProbeFailed;
+    dashWriteProbe.id = frame.id;
+    dashWriteProbe.mux = mux;
+    dashWriteProbe.txMs = millis();
+    dashWriteProbe.rxMs = 0;
+    dashWriteProbe.txDlc = (frame.dlc <= 8) ? frame.dlc : 8;
+    dashWriteProbe.rxDlc = 0;
+    memset(dashWriteProbe.txData, 0, sizeof(dashWriteProbe.txData));
+    memset(dashWriteProbe.rxData, 0, sizeof(dashWriteProbe.rxData));
+    memcpy(dashWriteProbe.txData, frame.data, dashWriteProbe.txDlc);
 }
 
 // JSON escape for log strings
@@ -647,7 +722,39 @@ static void handleStatus()
     j += mcpEflg;
     j += ",\"up\":";
     j += (millis() - startMs) / 1000;
-    j += ",\"feat\":{\"AD\":";
+    j += ",\"probe\":{\"active\":";
+    j += dashWriteProbe.active ? "true" : "false";
+    j += ",\"state\":";
+    j += dashWriteProbe.state;
+    j += ",\"id\":";
+    j += dashWriteProbe.id;
+    j += ",\"mux\":";
+    j += dashWriteProbe.mux;
+    j += ",\"txa\":";
+    j += dashWriteProbe.active ? String(now - dashWriteProbe.txMs) : String(0);
+    j += ",\"rxa\":";
+    j += dashWriteProbe.hasRx ? String(now - dashWriteProbe.rxMs) : String(0);
+    j += ",\"txdlc\":";
+    j += dashWriteProbe.txDlc;
+    j += ",\"rxdlc\":";
+    j += dashWriteProbe.rxDlc;
+    j += ",\"hasrx\":";
+    j += dashWriteProbe.hasRx ? "true" : "false";
+    j += ",\"tx\":[";
+    for (uint8_t i = 0; i < dashWriteProbe.txDlc; i++)
+    {
+        if (i)
+            j += ",";
+        j += String(dashWriteProbe.txData[i]);
+    }
+    j += "],\"rx\":[";
+    for (uint8_t i = 0; i < dashWriteProbe.rxDlc; i++)
+    {
+        if (i)
+            j += ",";
+        j += String(dashWriteProbe.rxData[i]);
+    }
+    j += "]},\"feat\":{\"AD\":";
     j += feat.ADEnabled ? "true" : "false";
     j += ",\"nag\":";
     j += feat.nagSuppress ? "true" : "false";
@@ -787,6 +894,7 @@ static void handleResetStats()
     memset(muxRx, 0, sizeof(muxRx));
     memset(muxTx, 0, sizeof(muxTx));
     memset(muxErr, 0, sizeof(muxErr));
+    dashResetWriteProbe();
     dashLog("[CFG] Stats reset");
     server.send(200, "application/json", "{\"ok\":true}");
 }
@@ -997,17 +1105,6 @@ static String dashFrameDataHex(const CanFrame &frame)
     }
     out.toUpperCase();
     return out;
-}
-
-static void dashRecordManualSend(const CanFrame &frame)
-{
-    txCount++;
-    if (frame.id == 1021)
-    {
-        uint8_t mux = frame.data[0] & 0x07;
-        if (mux < 4)
-            muxTx[mux]++;
-    }
 }
 
 static String dashPluginTestStatusJson()
@@ -2210,7 +2307,6 @@ static void dashPluginTestTick()
         return;
 
     dashDriver->send(pluginTestState.frame);
-    dashRecordManualSend(pluginTestState.frame);
     pluginTestState.sent++;
 
     if (pluginTestState.sent >= pluginTestState.total)
@@ -2245,7 +2341,6 @@ static void dashInitHandlers()
     for (int i = 0; i < 3; i++)
     {
         handlerPool[i]->onFrame = mcpDashOnFrame;
-        handlerPool[i]->onSend = mcpDashOnSend;
     }
 }
 
@@ -2287,8 +2382,11 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
     dashHandler = handler;
     dashDriver = driver;
 #endif
+    if (dashDriver)
+        dashDriver->onSendFrame = mcpDashOnTxFrame;
     startMs = millis();
     fpsLastMs = millis();
+    dashResetWriteProbe();
 
     if (!SPIFFS.begin(true))
         dashLog("[WARN] SPIFFS mount failed");

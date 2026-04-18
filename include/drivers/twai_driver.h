@@ -79,10 +79,14 @@ public:
         return true;
     }
 
-    void send(const CanFrame &frame) override
+    bool send(const CanFrame &frame) override
     {
         if (!driverOK_)
-            return;
+        {
+            if (onSendFrame)
+                onSendFrame(frame, false);
+            return false;
+        }
 
         twai_message_t msg = {};
         uint8_t dlc = (frame.dlc <= 8) ? frame.dlc : 8;
@@ -93,11 +97,15 @@ public:
         // Short timeout (2ms): modified frames should not be dropped, but
         // long blocks (10ms) risk overflowing the 32-deep RX queue.
         // At 500kbps, ~8 frames arrive in 2ms — queue handles this fine.
-        if (twai_transmit(&msg, pdMS_TO_TICKS(2)) != ESP_OK)
+        bool ok = twai_transmit(&msg, pdMS_TO_TICKS(2)) == ESP_OK;
+        if (!ok)
         {
             if (isBusOff())
                 recoverWithCooldown();
         }
+        if (onSendFrame)
+            onSendFrame(frame, ok);
+        return ok;
     }
 
 private:

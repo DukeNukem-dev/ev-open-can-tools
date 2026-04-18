@@ -146,6 +146,14 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
 .mux-tbl tr:last-child td{border-bottom:none}
 .mux-tbl td:first-child{color:var(--acc);font-weight:600}
 
+/* Last write check */
+.probe-status{font-size:13px;font-weight:600}
+.probe-note{font-size:11px;color:var(--tx3);line-height:1.6;margin-top:10px}
+.probe-block{margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)}
+.probe-meta{font-size:11px;color:var(--tx3);margin-bottom:4px}
+.probe-label{font-size:10px;color:var(--tx3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+.probe-hex{font-family:'SF Mono','Courier New',monospace;font-size:12px;color:var(--tx2);word-break:break-all}
+
 /* Buttons */
 .btn-row{display:flex;gap:8px;margin-top:14px}
 .btn{flex:1;padding:10px;border:1px solid;border-radius:9px;background:transparent;
@@ -312,6 +320,25 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     <tr><td>1</td><td id="m1rx">0</td><td id="m1tx">0</td><td id="m1err">0</td></tr>
     <tr><td>2</td><td id="m2rx">0</td><td id="m2tx">0</td><td id="m2err">0</td></tr>
   </table>
+</div>
+
+<div class="card">
+  <div class="card-hdr">
+    <div class="card-title">Last Write Check</div>
+    <div class="card-meta">Best effort</div>
+  </div>
+  <div class="probe-status v-dim" id="probe-status">No injected frame yet</div>
+  <div class="probe-note">Shows the last injected frame and the latest bus frame with the same ID and mux. Useful for spotting overwrite; a match is not proof that a module accepted the change.</div>
+  <div class="probe-block">
+    <div class="probe-label">Sent</div>
+    <div class="probe-meta" id="probe-tx-meta">—</div>
+    <div class="probe-hex" id="probe-tx">—</div>
+  </div>
+  <div class="probe-block">
+    <div class="probe-label">Bus</div>
+    <div class="probe-meta" id="probe-rx-meta">—</div>
+    <div class="probe-hex" id="probe-rx">—</div>
+  </div>
 </div>
 
 <div class="card">
@@ -777,7 +804,46 @@ function fmtUp(s){
   if(s<3600)return Math.floor(s/60)+'m '+String(s%60).padStart(2,'0')+'s';
   return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
 }
+function fmtAgeMs(ms){
+  if(ms<1000)return ms+' ms';
+  if(ms<10000)return (ms/1000).toFixed(1)+' s';
+  if(ms<60000)return Math.round(ms/1000)+' s';
+  return fmtUp(Math.floor(ms/1000));
+}
 function toHex(n,p){return n.toString(16).toUpperCase().padStart(p,'0')}
+function fmtProbeData(data,dlc){
+  if(!Array.isArray(data)||!dlc)return '—';
+  return data.slice(0,dlc).map(v=>toHex((v||0)&255,2)).join(' ');
+}
+function renderWriteProbe(p){
+  const status=$('probe-status');
+  if(!p||!p.active){
+    status.textContent='No injected frame yet';
+    status.className='probe-status v-dim';
+    $('probe-tx-meta').textContent='—';
+    $('probe-tx').textContent='—';
+    $('probe-rx-meta').textContent='—';
+    $('probe-rx').textContent='—';
+    return;
+  }
+  const id='CAN 0x'+toHex((p.id||0)&0x7FF,3)+(p.mux>=0?' · mux '+p.mux:'');
+  $('probe-tx-meta').textContent=id+' · '+fmtAgeMs(p.txa||0)+' ago';
+  $('probe-tx').textContent=fmtProbeData(p.tx,p.txdlc);
+  if(p.hasrx){
+    $('probe-rx-meta').textContent=id+' · '+fmtAgeMs(p.rxa||0)+' ago';
+    $('probe-rx').textContent=fmtProbeData(p.rx,p.rxdlc);
+  }else{
+    $('probe-rx-meta').textContent='No matching RX frame seen yet';
+    $('probe-rx').textContent='—';
+  }
+  let text='Waiting for next matching bus frame';
+  let cls='probe-status v-acc';
+  if(p.state===2){text='Matching frame seen on bus';cls='probe-status v-ok';}
+  else if(p.state===3){text='Latest bus frame differs from injected frame';cls='probe-status v-warn';}
+  else if(p.state===4){text='Driver transmit failed';cls='probe-status v-err';}
+  status.textContent=text;
+  status.className=cls;
+}
 
 function renderEflg(e){
   const el=$('eflg-row');
@@ -923,6 +989,7 @@ async function poll(){
     $('dot').className='sdot '+(d.txerr>5?'dot-warn':on?'dot-on':'dot-off');
     $('hdr-desc').textContent=on?(d.AD?'AD active — injecting':'CAN active — monitoring'):'Waiting for CAN frames';
     renderEflg(d.eflg);
+    renderWriteProbe(d.probe);
     if(d.mux){for(let i=0;i<3;i++){$(('m'+i+'rx')).textContent=d.mux[i].rx;$(('m'+i+'tx')).textContent=d.mux[i].tx;const e=$(('m'+i+'err'));e.textContent=d.mux[i].err;e.style.color=d.mux[i].err>0?'var(--err)':'';}}
     state.hw=d.hw;state.sp=d.sp;state.can=d.ci;
     updateInjectButtons(d.ci);
