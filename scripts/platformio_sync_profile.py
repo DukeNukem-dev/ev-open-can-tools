@@ -81,6 +81,23 @@ def _normalize_cppdefines(raw_defines):
     return normalized
 
 
+def _set_cppdefine(env_obj, name, value):
+    cppdefines = list(env_obj.get("CPPDEFINES") or [])
+    updated = []
+    replaced = False
+    for item in cppdefines:
+        item_name = item[0] if isinstance(item, (tuple, list)) and item else item
+        if item_name == name:
+            if not replaced:
+                updated.append((name, str(value)))
+                replaced = True
+            continue
+        updated.append(item)
+    if not replaced:
+        updated.append((name, str(value)))
+    env_obj.Replace(CPPDEFINES=updated)
+
+
 def _project_option_defines(env_obj):
     define_sources = []
 
@@ -147,8 +164,7 @@ if not uses_dashboard_hw and env_vehicle and env_vehicle != [selected_vehicle]:
 
 if uses_dashboard_hw:
     dash_hw_val = _DASH_HW_MAP[selected_vehicle]
-    if "DASH_DEFAULT_HW" not in env_defines and "DASH_DEFAULT_HW" not in project_defines:
-        env.Append(CPPDEFINES=[("DASH_DEFAULT_HW", str(dash_hw_val))])
+    _set_cppdefine(env, "DASH_DEFAULT_HW", dash_hw_val)
     sync_defines = selected_options
 else:
     sync_defines = [selected_vehicle] + selected_options

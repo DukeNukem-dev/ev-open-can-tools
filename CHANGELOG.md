@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-04-18
+
+### Fixed
+- Dashboard hardware defaults now follow `platformio_profile.h` reliably for dashboard builds, even when older `DASH_DEFAULT_HW` values still exist in the selected PlatformIO environment
+- Reflashing a dashboard build with a new default hardware mode now migrates stale stored hardware defaults from NVS without overwriting an explicit hardware choice made later in the web UI
+
+## [2.3.0] - 2026-04-18
+
+### Added
+- Dedicated documentation pages for build and flash setup, dashboard usage, and a docs index for GitHub Pages
+- Hardware-specific example plugins for HW3 and HW4 feature replacements, including AD activation, TLSSC bypass, nag suppression, Summon unlock, ISA chime suppression, emergency vehicle detection, and HW4 speed offsets
+
 ### Changed
 - Dashboard Features card now only exposes Enable Logging; the other vehicle overrides are no longer shown there
+- GitHub Actions are now split into separate workflows for tests, releases, and GitHub Pages deployment
+- Dashboard and README documentation now reflect the plugin-based override flow and current Pages structure
 
 ## [2.2.0] - 2026-04-18
 

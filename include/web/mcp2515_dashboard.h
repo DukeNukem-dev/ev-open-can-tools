@@ -57,6 +57,7 @@ static constexpr bool kDashInjectionDefaultEnabled = false;
 #endif
 
 #define PREFS_NS "ADunlock"
+static constexpr uint8_t kDashUnsetU8 = 0xFF;
 
 static Preferences prefs;
 
@@ -336,6 +337,7 @@ static void dashSavePrefs()
 {
     prefs.begin(PREFS_NS, false);
     prefs.putUChar("hw", hwMode);
+    prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     prefs.putUChar("sp", dashHandler ? (int)dashHandler->speedProfile : 1);
     prefs.putBool("can", canActive);
     prefs.putBool("fAD", bypassTlssc);
@@ -373,7 +375,27 @@ static void dashToggleCanActive(const char *reason = nullptr)
 static void dashLoadPrefs()
 {
     prefs.begin(PREFS_NS, false);
-    hwMode = prefs.getUChar("hw", DASH_DEFAULT_HW);
+    bool hasStoredHw = prefs.isKey("hw");
+    uint8_t storedHw = prefs.getUChar("hw", DASH_DEFAULT_HW);
+    uint8_t storedDefaultHw = prefs.getUChar("hw_def", kDashUnsetU8);
+    bool migratedHw = false;
+
+    hwMode = storedHw <= 2 ? storedHw : DASH_DEFAULT_HW;
+    if (!hasStoredHw || storedHw > 2)
+        migratedHw = true;
+
+    // If the stored selection only mirrors the old firmware default, follow the
+    // new build default after reflashing instead of staying pinned to stale NVS.
+    if (storedDefaultHw <= 2 && storedDefaultHw != DASH_DEFAULT_HW && hwMode == storedDefaultHw)
+    {
+        hwMode = DASH_DEFAULT_HW;
+        migratedHw = true;
+    }
+
+    if (migratedHw)
+        prefs.putUChar("hw", hwMode);
+    if (storedDefaultHw != DASH_DEFAULT_HW)
+        prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     canActive = prefs.getBool("can", kDashInjectionDefaultEnabled);
     bypassTlssc = kBypassTlsscRequirementDefaultEnabled;
     feat.ADEnabled = true;
@@ -423,6 +445,9 @@ static void dashLoadPrefs()
     autoUpdateEnabled = prefs.getBool("auto_upd", false);
     prefs.end();
 
+    if (migratedHw)
+        dashLog("[BOOT] HW default synced to " + String(hwMode == 0 ? "LEGACY" : hwMode == 1 ? "HW3"
+                                                                                           : "HW4"));
     dashLog("[BOOT] Prefs loaded HW=" + String(hwMode) + " SP=" + String(sp));
     dashLog("[BOOT] canActive=" + String(canActive ? "YES" : "NO") +
             " bypassTlssc=" + String(bypassTlssc ? "YES" : "NO"));
