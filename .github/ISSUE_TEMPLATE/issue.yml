@@ -36,13 +36,12 @@ body:
     validations:
       required: true
 
-  - type: textarea
+  - type: input
     id: sw_version
     attributes:
       label: Vehicle Software Version
       description: Which Tesla software version are you running in your car?
       placeholder: v2026.8.3
-      render: cpp
     validations:
       required: true
 
