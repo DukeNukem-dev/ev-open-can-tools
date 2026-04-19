@@ -1179,11 +1179,11 @@ async function installPlugin(){
     await fetchJsonWithTimeout('/plugin_install',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'url='+encodeURIComponent(url)},20000);
     $('plg-url').value='';
     try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
-    $('plg-status').textContent='Installed disabled';$('plg-status').style.color='var(--ok)';
+    $('plg-status').textContent='Installed';$('plg-status').style.color='var(--ok)';
   }catch(e){
     if(await refreshPluginsAfterAction(beforeSig)){
       $('plg-url').value='';
-      $('plg-status').textContent='Installed disabled';$('plg-status').style.color='var(--ok)';
+      $('plg-status').textContent='Installed';$('plg-status').style.color='var(--ok)';
     }else{$('plg-status').textContent=actionErrorMessage(e,'Connection error');$('plg-status').style.color='var(--err)';}
   }
 }
@@ -1195,10 +1195,10 @@ async function uploadPlugin(file){
     const text=await file.text();
     await fetchJsonWithTimeout('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:text},5000);
     try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
-    $('plg-status').textContent='Installed disabled';$('plg-status').style.color='var(--ok)';
+    $('plg-status').textContent='Installed';$('plg-status').style.color='var(--ok)';
   }catch(e){
     if(await refreshPluginsAfterAction(beforeSig)){
-      $('plg-status').textContent='Installed disabled';$('plg-status').style.color='var(--ok)';
+      $('plg-status').textContent='Installed';$('plg-status').style.color='var(--ok)';
     }else{$('plg-status').textContent=actionErrorMessage(e,'Error');$('plg-status').style.color='var(--err)';}
   }
 }
@@ -1212,11 +1212,11 @@ async function pastePlugin(){
     await fetchJsonWithTimeout('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:text},5000);
     $('plg-paste').value='';
     try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
-    $('plg-status').textContent='Installed disabled';$('plg-status').style.color='var(--ok)';
+    $('plg-status').textContent='Installed';$('plg-status').style.color='var(--ok)';
   }catch(e){
     if(await refreshPluginsAfterAction(beforeSig)){
       $('plg-paste').value='';
-      $('plg-status').textContent='Installed disabled';$('plg-status').style.color='var(--ok)';
+      $('plg-status').textContent='Installed';$('plg-status').style.color='var(--ok)';
     }else{$('plg-status').textContent=actionErrorMessage(e,'Connection error');$('plg-status').style.color='var(--err)';}
   }
 }
@@ -1756,11 +1756,11 @@ async function peInstall(){
     await fetchJsonWithTimeout('/plugin_upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)},5000);
     peLoadedPluginName=obj.name;
     try{await refreshPluginsNow();}catch(e){await refreshPluginsAfterAction(beforeSig);}
-    peSetStatus('Installed disabled','ok');
+    peSetStatus('Installed','ok');
   }catch(e){
     if(await refreshPluginsAfterAction(beforeSig)){
       peLoadedPluginName=obj.name;
-      peSetStatus('Installed disabled','ok');
+      peSetStatus('Installed','ok');
     }else{peSetStatus(actionErrorMessage(e,'Connection error'),'err');}
   }
 }
