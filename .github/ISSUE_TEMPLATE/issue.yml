@@ -65,6 +65,19 @@ body:
     validations:
       required: false
 
+  - type: dropdown
+    id: can_termination_resistor
+    attributes:
+      label: 120 ohm CAN termination resistor
+      description: If your board or CAN adapter has an onboard 120 ohm resistor, did you cut or remove it before connecting to the vehicle CAN bus?
+      options:
+        - Not sure
+        - Yes, removed or cut
+        - No, still fitted
+        - Board does not have one
+    validations:
+      required: false
+
   - type: textarea
     id: profile
     attributes:
