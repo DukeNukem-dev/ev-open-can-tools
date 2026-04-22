@@ -58,11 +58,14 @@ public:
         return true;
     }
 
-    void send(const CanFrame &frame) override
+    bool send(const CanFrame &frame) override
     {
         can_.beginPacket(frame.id);
         can_.write(frame.data, frame.dlc);
         can_.endPacket();
+        if (onSendFrame)
+            onSendFrame(frame, true);
+        return true;
     }
 
 private:

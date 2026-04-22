@@ -5,7 +5,7 @@
 
 inline constexpr uint8_t kTrackModeRequestOn = 0x01;
 
-#if defined(BYPASS_TLSSC_REQUIREMENT)
+#if defined(BYPASS_TLSSC_REQUIREMENT) && !defined(ESP32_DASHBOARD)
 inline constexpr bool kBypassTlsscRequirementDefaultEnabled = true;
 inline constexpr bool kBypassTlsscRequirementBuildEnabled = true;
 #else
@@ -13,7 +13,7 @@ inline constexpr bool kBypassTlsscRequirementDefaultEnabled = false;
 inline constexpr bool kBypassTlsscRequirementBuildEnabled = false;
 #endif
 
-#if defined(ISA_SPEED_CHIME_SUPPRESS)
+#if defined(ISA_SPEED_CHIME_SUPPRESS) && !defined(ESP32_DASHBOARD)
 inline constexpr bool kIsaSpeedChimeSuppressDefaultEnabled = true;
 inline constexpr bool kIsaSpeedChimeSuppressBuildEnabled = true;
 #else
@@ -21,7 +21,7 @@ inline constexpr bool kIsaSpeedChimeSuppressDefaultEnabled = false;
 inline constexpr bool kIsaSpeedChimeSuppressBuildEnabled = false;
 #endif
 
-#if defined(EMERGENCY_VEHICLE_DETECTION)
+#if defined(EMERGENCY_VEHICLE_DETECTION) && !defined(ESP32_DASHBOARD)
 inline constexpr bool kEmergencyVehicleDetectionDefaultEnabled = true;
 inline constexpr bool kEmergencyVehicleDetectionBuildEnabled = true;
 #else
@@ -29,7 +29,7 @@ inline constexpr bool kEmergencyVehicleDetectionDefaultEnabled = false;
 inline constexpr bool kEmergencyVehicleDetectionBuildEnabled = false;
 #endif
 
-#if defined(ENHANCED_AUTOPILOT)
+#if defined(ENHANCED_AUTOPILOT) && !defined(ESP32_DASHBOARD)
 inline constexpr bool kEnhancedAutopilotDefaultEnabled = true;
 inline constexpr bool kEnhancedAutopilotBuildEnabled = true;
 #else
@@ -37,7 +37,7 @@ inline constexpr bool kEnhancedAutopilotDefaultEnabled = false;
 inline constexpr bool kEnhancedAutopilotBuildEnabled = false;
 #endif
 
-#if defined(NAG_KILLER)
+#if defined(NAG_KILLER) && !defined(ESP32_DASHBOARD)
 inline constexpr bool kNagKillerDefaultEnabled = true;
 inline constexpr bool kNagKillerBuildEnabled = true;
 #else
@@ -50,8 +50,6 @@ inline Shared<bool> isaSpeedChimeSuppressRuntime{kIsaSpeedChimeSuppressDefaultEn
 inline Shared<bool> emergencyVehicleDetectionRuntime{kEmergencyVehicleDetectionDefaultEnabled};
 inline Shared<bool> enhancedAutopilotRuntime{kEnhancedAutopilotDefaultEnabled};
 inline Shared<bool> nagKillerRuntime{kNagKillerDefaultEnabled};
-inline Shared<bool> speedProfileLocked{false};
-inline Shared<uint8_t> hw4OffsetRuntime{0};
 
 inline uint8_t readMuxID(const CanFrame &frame)
 {

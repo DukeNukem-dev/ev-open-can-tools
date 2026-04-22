@@ -55,13 +55,16 @@ public:
         return true;
     }
 
-    void send(const CanFrame &frame) override
+    bool send(const CanFrame &frame) override
     {
         can_frame raw;
         raw.can_id = frame.id;
         raw.can_dlc = frame.dlc;
         memcpy(raw.data, frame.data, 8);
-        mcp_.sendMessage(&raw);
+        bool ok = mcp_.sendMessage(&raw) == MCP2515::ERROR_OK;
+        if (onSendFrame)
+            onSendFrame(frame, ok);
+        return ok;
     }
 
 private:

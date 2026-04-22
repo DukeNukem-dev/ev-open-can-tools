@@ -53,7 +53,7 @@ void test_hw3_follow_distance_0_keeps_default()
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile); // default
 }
 
-void test_hw3_follow_distance_profile_survives_mux0_with_zero_offset()
+void test_hw3_follow_distance_profile_survives_mux0_without_injection()
 {
     CanFrame followDistanceFrame = {.id = 1016};
     followDistanceFrame.data[5] = 0b00100000; // followDistance = 1 => profile 2
@@ -65,33 +65,32 @@ void test_hw3_follow_distance_profile_survives_mux0_with_zero_offset()
     autopilotFrame.data[0] = 0x00; // mux 0
     autopilotFrame.data[4] = 0x40; // AD selected
     autopilotFrame.data[3] = 60;   // speed offset = 0
+    autopilotFrame.data[6] = 0x02;
     handler.handleMessage(autopilotFrame, mock);
 
     TEST_ASSERT_EQUAL_INT(0, handler.speedOffset);
     TEST_ASSERT_EQUAL_INT(2, handler.speedProfile);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
-    TEST_ASSERT_EQUAL_HEX8(0x04, mock.sent[0].data[6] & 0x06);
+    TEST_ASSERT_EQUAL_HEX8(0x02, mock.sent[0].data[6] & 0x06);
 }
 
 // --- AD shadowing fix regression test ---
 
 void test_hw3_AD_enabled_only_set_on_mux0()
 {
-    // Step 1: mux 0 with AD bit set -> ADEnabled should become true
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00; // mux 0
     f0.data[4] = 0x40; // AD selected
     handler.handleMessage(f0, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
 
-    // Step 2: mux 2 with AD bit NOT set -> ADEnabled should STAY true
     mock.reset();
     CanFrame f2 = {.id = 1021};
     f2.data[0] = 0x02; // mux 2
     f2.data[4] = 0x00; // AD bit not set in this frame
     handler.handleMessage(f2, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
-    TEST_ASSERT_EQUAL(1, mock.sent.size()); // mux 2 should still send because ADEnabled is latched
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
 void test_hw3_AD_disabled_on_mux0_prevents_mux2_send()
@@ -103,7 +102,6 @@ void test_hw3_AD_disabled_on_mux0_prevents_mux2_send()
     handler.handleMessage(f0, mock);
     TEST_ASSERT_FALSE(handler.ADEnabled);
 
-    // mux 2 should NOT send
     mock.reset();
     CanFrame f2 = {.id = 1021};
     f2.data[0] = 0x02;
@@ -234,7 +232,7 @@ int main()
     RUN_TEST(test_hw3_follow_distance_2_sets_profile_1);
     RUN_TEST(test_hw3_follow_distance_3_sets_profile_0);
     RUN_TEST(test_hw3_follow_distance_0_keeps_default);
-    RUN_TEST(test_hw3_follow_distance_profile_survives_mux0_with_zero_offset);
+    RUN_TEST(test_hw3_follow_distance_profile_survives_mux0_without_injection);
 
     RUN_TEST(test_hw3_AD_enabled_only_set_on_mux0);
     RUN_TEST(test_hw3_AD_disabled_on_mux0_prevents_mux2_send);

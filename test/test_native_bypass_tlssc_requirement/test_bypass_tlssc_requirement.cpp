@@ -60,7 +60,7 @@ void test_bypass_tlssc_hw3_sends_without_ui_toggle()
     TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[5] & 0x40); // bit 46
 }
 
-void test_bypass_tlssc_hw3_mux2_sends_without_ui_toggle()
+void test_bypass_tlssc_hw3_mux2_stays_silent_without_ui_toggle()
 {
     HW3Handler handler;
     handler.enablePrint = false;
@@ -75,7 +75,7 @@ void test_bypass_tlssc_hw3_mux2_sends_without_ui_toggle()
     CanFrame f2 = {.id = 1021};
     f2.data[0] = 0x02; // mux 2
     handler.handleMessage(f2, mock);
-    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
 // --- HW4: sends on mux 0 even without AD toggle ---
@@ -103,7 +103,7 @@ int main()
 
     RUN_TEST(test_bypass_tlssc_legacy_sends_without_ui_toggle);
     RUN_TEST(test_bypass_tlssc_hw3_sends_without_ui_toggle);
-    RUN_TEST(test_bypass_tlssc_hw3_mux2_sends_without_ui_toggle);
+    RUN_TEST(test_bypass_tlssc_hw3_mux2_stays_silent_without_ui_toggle);
     RUN_TEST(test_bypass_tlssc_hw4_sends_without_ui_toggle);
 
     return UNITY_END();

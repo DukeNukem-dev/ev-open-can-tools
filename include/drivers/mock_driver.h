@@ -20,9 +20,12 @@ public:
         return false;
     }
 
-    void send(const CanFrame &frame) override
+    bool send(const CanFrame &frame) override
     {
         sent.push_back(frame);
+        if (onSendFrame)
+            onSendFrame(frame, true);
+        return true;
     }
 
     void reset()

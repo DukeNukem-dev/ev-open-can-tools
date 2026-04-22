@@ -83,8 +83,8 @@ void test_hw4_AD_enabled_only_set_on_mux0()
     f2.data[0] = 0x02;
     f2.data[4] = 0x00; // AD bit not set in mux 2
     handler.handleMessage(f2, mock);
-    TEST_ASSERT_TRUE(handler.ADEnabled);    // latched from mux 0
-    TEST_ASSERT_EQUAL(1, mock.sent.size()); // mux 2 always sends for HW4
+    TEST_ASSERT_TRUE(handler.ADEnabled);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
 // --- AD activation (mux 0) ---
@@ -173,11 +173,10 @@ void test_hw4_nag_suppression_skips_mux1_changes_when_eap_runtime_disabled()
     TEST_ASSERT_EQUAL(0, mock.sent.size()); // frame are not sent when runtime disabled
 }
 
-// --- Speed profile injection (mux 2) ---
-void test_hw4_mux2_injects_speed_profile()
+// --- Profile is observed but not injected (mux 2 stays silent) ---
+void test_hw4_mux2_does_not_inject_speed_profile()
 {
     handler.speedProfile = 3;
-    // Latch ADEnabled via mux 0 first
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
     f0.data[4] = 0x40;
@@ -187,15 +186,12 @@ void test_hw4_mux2_injects_speed_profile()
     f.data[0] = 0x02;
     f.data[7] = 0x00;
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL(1, mock.sent.size());
-    uint8_t injected = (mock.sent[0].data[7] >> 4) & 0x07;
-    TEST_ASSERT_EQUAL_UINT8(3, injected);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
-void test_hw4_mux2_clears_old_profile_bits()
+void test_hw4_mux2_preserves_old_profile_bits_by_not_sending()
 {
     handler.speedProfile = 0;
-    // Latch ADEnabled first via mux 0
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
     f0.data[4] = 0x40;
@@ -205,9 +201,7 @@ void test_hw4_mux2_clears_old_profile_bits()
     f.data[0] = 0x02;
     f.data[7] = 0x70; // old profile bits all set
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL(1, mock.sent.size());
-    uint8_t injected = (mock.sent[0].data[7] >> 4) & 0x07;
-    TEST_ASSERT_EQUAL_UINT8(0, injected);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 // --- Send counts ---
 
@@ -228,9 +222,8 @@ void test_hw4_mux1_sends_1()
     TEST_ASSERT_EQUAL(1, mock.sent.size());
 }
 
-void test_hw4_mux2_sends_1()
+void test_hw4_mux2_sends_0()
 {
-    // Latch ADEnabled first via mux 0
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
     f0.data[4] = 0x40;
@@ -239,7 +232,7 @@ void test_hw4_mux2_sends_1()
     CanFrame f = {.id = 1021};
     f.data[0] = 0x02;
     handler.handleMessage(f, mock);
-    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 void test_hw4_ignores_unrelated_can_id()
 {
@@ -350,12 +343,12 @@ int main()
     RUN_TEST(test_hw4_nag_suppression_clears_bit19_sets_bit47);
     RUN_TEST(test_hw4_nag_suppression_skips_mux1_changes_when_eap_runtime_disabled);
 
-    RUN_TEST(test_hw4_mux2_injects_speed_profile);
-    RUN_TEST(test_hw4_mux2_clears_old_profile_bits);
+    RUN_TEST(test_hw4_mux2_does_not_inject_speed_profile);
+    RUN_TEST(test_hw4_mux2_preserves_old_profile_bits_by_not_sending);
 
     RUN_TEST(test_hw4_mux0_AD_enabled_sends_1);
     RUN_TEST(test_hw4_mux1_sends_1);
-    RUN_TEST(test_hw4_mux2_sends_1);
+    RUN_TEST(test_hw4_mux2_sends_0);
     RUN_TEST(test_hw4_ignores_unrelated_can_id);
 
     RUN_TEST(test_hw4_isa_suppress_sets_bit5_of_data1);

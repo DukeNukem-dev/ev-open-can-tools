@@ -133,11 +133,7 @@ if uses_dashboard_hw:
     selected_vehicle = _pick_dashboard_default(active, VEHICLE_DEFINES, "HW3")
 else:
     selected_vehicle = _pick_one(active, VEHICLE_DEFINES, "vehicle define")
-selected_options = (
-    list(OPTIONAL_DEFINES)
-    if selected_driver == "DRIVER_TWAI"
-    else [name for name in OPTIONAL_DEFINES if name in active]
-)
+selected_options = [] if uses_dashboard_hw else [name for name in OPTIONAL_DEFINES if name in active]
 
 env_defines = _normalize_cppdefines(env.get("CPPDEFINES"))
 env_driver = [name for name in DRIVER_DEFINES if name in project_defines]

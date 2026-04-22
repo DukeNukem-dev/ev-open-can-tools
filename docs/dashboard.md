@@ -3,6 +3,7 @@
 [Project Home](../) | [Documentation](index.md) | [Build & Flash](building.md) | [Plugin System](plugins.md) | [Release Notes](../CHANGELOG.md)
 
 The dashboard is available on ESP32 builds that include `ESP32_DASHBOARD`. It runs from the device itself and is intended for local management at `http://192.168.4.1/` while connected to the device hotspot.
+![Dashboard](img/dashboard.png)
 
 ## Core Runtime Controls
 
@@ -31,13 +32,14 @@ The dashboard is available on ESP32 builds that include `ESP32_DASHBOARD`. It ru
 
 - **Plugins card**: install from URL, upload a `.json`, or paste JSON directly when offline
 - **Plugin list**: inspect rules, enable or disable plugins, remove them, and spot overlaps with built-in firmware handlers
-- **Plugin Editor**: create plugins without hand-writing JSON, preview the result live, load an installed plugin back into the editor, and download the generated file
-- **Rule Test**: generate a frame from one editor rule and send it repeatedly with a chosen count and interval before installing the plugin
+- **Plugin Editor**: create plugins without hand-writing JSON, preview the result live, load an installed plugin back into the editor, download the generated file, and add a quick rule from shorthand such as `0x7FF mux=2 byte[5] = 0x4C`
+- **Rule Test**: wait for a matching live CAN frame, apply one editor rule to that frame, then send the result repeatedly with a chosen count and interval
 - Plugin-based overrides such as nag suppression and Summon unlock can live here instead of on the main Features card
 - Build-default behavior still applies for the compiled firmware features that are no longer exposed as dashboard toggles
+- Dashboard cards can be collapsed individually with `Hide` / `Show` to keep the page shorter on mobile
 
 ## Persistence Notes
 
 - WiFi hotspot settings, WiFi internet settings, update flags, CAN pins, and several runtime defaults are stored in NVS
-- Installed plugins live on SPIFFS and their enabled or disabled state is restored on boot
+- Installed plugins live on SPIFFS, start disabled after install, and restore their enabled or disabled state on boot
 - On AtomS3 Mini builds, the built-in button can toggle injection and that state is also persisted
