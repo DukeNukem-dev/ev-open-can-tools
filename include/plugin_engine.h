@@ -22,7 +22,7 @@
 #define PLUGIN_PERIODIC_INTERVAL_MAX_MS 5000
 #define PLUGIN_GTW_UDS_REQUEST_ID 0x684
 #define PLUGIN_GTW_UDS_RESPONSE_ID 0x685
-#define PLUGIN_GTW_UDS_KEEPALIVE_MS 2000    // TesterPresent cadence once session is active
+#define PLUGIN_GTW_UDS_KEEPALIVE_MS 2000 // TesterPresent cadence once session is active
 #define PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS 400
 #define PLUGIN_GTW_UDS_RETRY_BACKOFF_MS 5000 // after NRC or timeout, wait before retrying sequence
 #define PLUGIN_GTW_UDS_SEED_MAX 6
@@ -50,13 +50,13 @@ struct PluginOp
 
 enum PluginGtwUdsState : uint8_t
 {
-    GTW_UDS_IDLE = 0,             // no silencing attempt in progress
-    GTW_UDS_SESSION_REQ = 1,      // 0x10 0x03 sent, waiting for positive response
-    GTW_UDS_SEED_REQ = 2,         // 0x27 0x01 sent, waiting for seed
-    GTW_UDS_KEY_SENT = 3,         // 0x27 0x02 sent, waiting for positive response
-    GTW_UDS_COMM_CTRL_SENT = 4,   // 0x28 0x01 0x01 sent, waiting for positive response
-    GTW_UDS_ACTIVE = 5,           // silence is active; periodic 0x3E TesterPresent keeps it alive
-    GTW_UDS_FAILED = 6,           // NRC/timeout — back off before retry
+    GTW_UDS_IDLE = 0,           // no silencing attempt in progress
+    GTW_UDS_SESSION_REQ = 1,    // 0x10 0x03 sent, waiting for positive response
+    GTW_UDS_SEED_REQ = 2,       // 0x27 0x01 sent, waiting for seed
+    GTW_UDS_KEY_SENT = 3,       // 0x27 0x02 sent, waiting for positive response
+    GTW_UDS_COMM_CTRL_SENT = 4, // 0x28 0x01 0x01 sent, waiting for positive response
+    GTW_UDS_ACTIVE = 5,         // silence is active; periodic 0x3E TesterPresent keeps it alive
+    GTW_UDS_FAILED = 6,         // NRC/timeout — back off before retry
 };
 
 struct PluginGtwUdsMachine
