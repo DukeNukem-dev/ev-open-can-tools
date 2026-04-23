@@ -95,6 +95,16 @@ static const uint8_t mcpEflg = 0;
 static uint8_t hwMode = DASH_DEFAULT_HW;
 static bool canActive = kDashInjectionDefaultEnabled;
 
+static constexpr uint8_t kHw3SlewRateMin = 1;
+static constexpr uint8_t kHw3SlewRateMax = 25;
+static constexpr uint8_t kHw3SlewRateDefault = 5;
+static bool hw3OffsetSlew = false;
+static uint8_t hw3SlewRate = kHw3SlewRateDefault;
+static uint8_t hw3OffsetTargetRaw = 0;
+static uint8_t hw3OffsetLastRaw = 0;
+static uint32_t hw3OffsetLastSentMs = 0;
+static uint32_t hw3OffsetSlewCount = 0;
+
 // WiFi AP (hotspot) — overridable at runtime
 static char apSSID[33] = "";
 static char apPass[65] = "";
@@ -393,6 +403,79 @@ static bool dashCheckNagDisabled()
     return false;
 }
 
+static bool dashStaSsidLooksCorrupt(const String &ssid)
+{
+    return ssid.indexOf("\"ssid\"") >= 0 || ssid.indexOf("{\"") >= 0 ||
+           ssid.indexOf("\",\"") >= 0;
+}
+
+static uint8_t dashClampHw3SlewRate(int rate)
+{
+    if (rate < kHw3SlewRateMin)
+        return kHw3SlewRateMin;
+    if (rate > kHw3SlewRateMax)
+        return kHw3SlewRateMax;
+    return static_cast<uint8_t>(rate);
+}
+
+static uint8_t dashLoadHw3SlewRate(uint8_t rate)
+{
+    if (rate < kHw3SlewRateMin || rate > kHw3SlewRateMax)
+        return kHw3SlewRateDefault;
+    return rate;
+}
+
+static bool dashReadHw3OffsetRaw(const CanFrame &frame, uint8_t &raw)
+{
+    if (hwMode != 1 || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
+        return false;
+
+    raw = static_cast<uint8_t>(((frame.data[1] & 0x3F) << 2) | ((frame.data[0] >> 6) & 0x03));
+    return true;
+}
+
+static void dashWriteHw3OffsetRaw(CanFrame &frame, uint8_t raw)
+{
+    frame.data[0] = static_cast<uint8_t>((frame.data[0] & ~0xC0) | ((raw & 0x03) << 6));
+    frame.data[1] = static_cast<uint8_t>((frame.data[1] & ~0x3F) | (raw >> 2));
+}
+
+static bool dashApplyHw3OffsetSlew(CanFrame &modified, const CanFrame & /*original*/)
+{
+    uint8_t activeRaw = 0;
+    if (!dashReadHw3OffsetRaw(modified, activeRaw))
+        return false;
+
+    hw3OffsetTargetRaw = activeRaw;
+    uint8_t shapedRaw = activeRaw;
+    uint32_t now = millis();
+
+    if (hw3OffsetSlew)
+    {
+        uint8_t last = hw3OffsetLastRaw;
+        if (activeRaw < last && hw3OffsetLastSentMs != 0)
+        {
+            uint32_t rateRawPerSec = static_cast<uint32_t>(dashLoadHw3SlewRate(hw3SlewRate)) * 4;
+            uint32_t dt = now - hw3OffsetLastSentMs;
+            uint32_t maxDrop = (rateRawPerSec * dt + 500) / 1000;
+            uint8_t floorRaw = last > maxDrop ? static_cast<uint8_t>(last - maxDrop) : 0;
+            if (activeRaw < floorRaw)
+            {
+                shapedRaw = floorRaw;
+                hw3OffsetSlewCount++;
+            }
+        }
+    }
+
+    hw3OffsetLastRaw = shapedRaw;
+    hw3OffsetLastSentMs = now;
+    if (shapedRaw == activeRaw)
+        return false;
+
+    dashWriteHw3OffsetRaw(modified, shapedRaw);
+    return true;
+}
+
 static void dashApplyRuntimeState()
 {
     bypassTlsscRequirementRuntime = false;
@@ -422,6 +505,9 @@ static void dashSavePrefs()
     prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     prefs.putBool("can", canActive);
     prefs.putBool("eprn", dashHandler ? (bool)dashHandler->enablePrint : true);
+    prefs.putUChar("plg_rep", pluginGetReplayCount());
+    prefs.putBool("h3_slw", hw3OffsetSlew);
+    prefs.putUChar("h3_srt", hw3SlewRate);
     prefs.end();
 }
 
@@ -522,6 +608,9 @@ static void dashLoadPrefs()
     if (storedDefaultHw != DASH_DEFAULT_HW)
         prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     canActive = prefs.getBool("can", kDashInjectionDefaultEnabled);
+    pluginSetReplayCount(prefs.getUChar("plg_rep", PLUGIN_REPLAY_COUNT));
+    hw3OffsetSlew = prefs.getBool("h3_slw", false);
+    hw3SlewRate = dashLoadHw3SlewRate(prefs.getUChar("h3_srt", kHw3SlewRateDefault));
     bool ep = prefs.getBool("eprn", true);
 
     dashApplyRuntimeState();
@@ -557,7 +646,7 @@ static void dashLoadPrefs()
     // Load WiFi STA credentials
     String wifiSsid = prefs.isKey("wifi_ssid") ? prefs.getString("wifi_ssid", "") : "";
     String wifiPass = prefs.isKey("wifi_pass") ? prefs.getString("wifi_pass", "") : "";
-    if (!dashStaConfigLengthValid(wifiSsid, wifiPass))
+    if (!dashStaConfigLengthValid(wifiSsid, wifiPass) || dashStaSsidLooksCorrupt(wifiSsid))
     {
         prefs.remove("wifi_ssid");
         prefs.remove("wifi_pass");
@@ -585,6 +674,7 @@ static void dashLoadPrefs()
                                                                                              : "HW4"));
     dashLog("[BOOT] Prefs loaded HW=" + String(hwMode));
     dashLog("[BOOT] canActive=" + String(canActive ? "YES" : "NO"));
+    dashLog("[BOOT] pluginReplay=" + String(pluginGetReplayCount()));
 }
 
 static uint32_t dashPluginStateHash(const char *value)
@@ -801,6 +891,20 @@ static void handleStatus()
     j += ADActive ? "true" : "false";
     j += ",\"eprn\":";
     j += ep ? "true" : "false";
+    j += ",\"plgr\":";
+    j += pluginGetReplayCount();
+    j += ",\"plgrmax\":";
+    j += PLUGIN_REPLAY_COUNT_MAX;
+    j += ",\"hw3OffsetSlew\":";
+    j += hw3OffsetSlew ? "true" : "false";
+    j += ",\"hw3SlewRate\":";
+    j += hw3SlewRate;
+    j += ",\"hw3OffsetTarget\":";
+    j += hw3OffsetTargetRaw;
+    j += ",\"hw3OffsetLast\":";
+    j += hw3OffsetLastRaw;
+    j += ",\"hw3SlewCount\":";
+    j += hw3OffsetSlewCount;
     j += ",\"can\":";
     j += canOnline ? "true" : "false";
     j += ",\"ci\":";
@@ -880,6 +984,31 @@ static void handleConfig()
     }
     if (server.hasArg("can"))
         canActive = server.arg("can") == "1";
+    if (server.hasArg("plgr"))
+    {
+        uint8_t previous = pluginGetReplayCount();
+        pluginSetReplayCount(server.arg("plgr").toInt());
+        if (pluginGetReplayCount() != previous)
+            dashLog("[CFG] Plugin replay x" + String(pluginGetReplayCount()));
+    }
+    if (server.hasArg("hw3OffsetSlew"))
+    {
+        bool v = server.arg("hw3OffsetSlew") == "1";
+        if (v != hw3OffsetSlew)
+        {
+            hw3OffsetSlew = v;
+            dashLog("[CFG] HW3 offset slew " + String(v ? "ON" : "OFF"));
+        }
+    }
+    if (server.hasArg("hw3SlewRate"))
+    {
+        uint8_t v = dashClampHw3SlewRate(server.arg("hw3SlewRate").toInt());
+        if (v != hw3SlewRate)
+        {
+            hw3SlewRate = v;
+            dashLog("[CFG] HW3 slew rate " + String(hw3SlewRate) + "%/s");
+        }
+    }
     if (hwChanged)
     {
         dashSwapHandler(hwMode);
@@ -1143,6 +1272,10 @@ static const char *pluginOpName(PluginOpType t)
         return "and_byte";
     case OP_CHECKSUM:
         return "checksum";
+    case OP_COUNTER:
+        return "counter";
+    case OP_EMIT_PERIODIC:
+        return "emit_periodic";
     default:
         return "?";
     }
@@ -1257,6 +1390,17 @@ static void handlePluginList()
                     j += ",\"bit\":" + String(op.index) + ",\"val\":" + String(op.value);
                 else if (op.type == OP_CHECKSUM)
                     j += "";
+                else if (op.type == OP_COUNTER)
+                {
+                    j += ",\"byte\":" + String(op.index);
+                    j += ",\"mask\":" + String(op.mask);
+                    j += ",\"step\":" + String(op.value);
+                }
+                else if (op.type == OP_EMIT_PERIODIC)
+                {
+                    j += ",\"interval\":" + String(op.intervalMs);
+                    j += ",\"gtw_silent\":" + String(op.gtwSilent ? "true" : "false");
+                }
                 else
                 {
                     j += ",\"byte\":" + String(op.index) + ",\"val\":" + String(op.value);
@@ -1332,6 +1476,7 @@ static bool pluginInstallJson(const String &json, const String &url)
     }
 
     dashSaveAllPluginStates();
+    pluginResetPeriodicEmit();
 
     dashReapplyFiltersWithPlugins();
     dashLog("[PLG] Installed: " + String(temp.name) + " (" + String(temp.ruleCount) + " rules)");
@@ -1401,6 +1546,7 @@ static void handlePluginToggle()
     if (idx < pluginCount)
     {
         pluginStore[idx].enabled = !pluginStore[idx].enabled;
+        pluginResetPeriodicEmit();
         dashSchedulePluginStateSave();
         dashReapplyFiltersWithPlugins();
         dashLog("[PLG] " + String(pluginStore[idx].name) + " " +
@@ -1426,6 +1572,7 @@ static void handlePluginRemove()
         String name = pluginStore[idx].name;
         dashClearPluginState(pluginStore[idx]);
         pluginRemove(idx);
+        pluginResetPeriodicEmit();
         dashSaveAllPluginStates();
         dashReapplyFiltersWithPlugins();
         dashLog("[PLG] Removed: " + name);
@@ -1451,6 +1598,7 @@ static void handlePluginPriority()
 
     if (pluginMove((uint8_t)idx, (uint8_t)priority))
     {
+        pluginResetPeriodicEmit();
         dashSaveAllPluginStates();
         dashReapplyFiltersWithPlugins();
         dashLog("[PLG] Priority: " + String(pluginStore[priority].name) + " #" + String(priority + 1));
@@ -1708,9 +1856,9 @@ static void handleWifiConfig()
     {
         String ssid = server.arg("ssid");
         String pass = server.arg("pass");
-        if (!dashStaConfigLengthValid(ssid, pass))
+        if (!dashStaConfigLengthValid(ssid, pass) || dashStaSsidLooksCorrupt(ssid))
         {
-            server.send(400, "application/json", "{\"ok\":false,\"error\":\"SSID max 32 bytes, password max 64 bytes\"}");
+            server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid SSID or password\"}");
             return;
         }
         strlcpy(staSSID, ssid.c_str(), sizeof(staSSID));
@@ -1756,12 +1904,19 @@ static void handleWifiStatus()
         stored = p.isKey("wifi_ssid") && p.getString("wifi_ssid", "").length() > 0;
         p.end();
     }
+    bool connectedNow = WiFi.status() == WL_CONNECTED;
+    IPAddress staIp = WiFi.localIP();
+    bool hasStaIp = static_cast<uint32_t>(staIp) != 0;
+    bool connected = connectedNow || staConnected || hasStaIp;
+    String activeSsid = connectedNow ? WiFi.SSID() : String(staSSID);
+    if (dashStaSsidLooksCorrupt(activeSsid))
+        activeSsid = "";
     String j = "{\"connected\":";
-    j += staConnected ? "true" : "false";
-    j += ",\"ssid\":\"" + jsonEscape(staSSID) + "\"";
+    j += connected ? "true" : "false";
+    j += ",\"ssid\":\"" + jsonEscape(activeSsid) + "\"";
     j += ",\"stored\":" + String(stored ? "true" : "false");
-    if (staConnected)
-        j += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+    if (connected)
+        j += ",\"ip\":\"" + staIp.toString() + "\"";
     j += ",\"static\":" + String(staStaticIP ? "true" : "false");
     if (staStaticIP)
     {
@@ -1770,6 +1925,8 @@ static void handleWifiStatus()
         j += ",\"cfg_mask\":\"" + staMask.toString() + "\"";
         j += ",\"cfg_dns\":\"" + staDNS.toString() + "\"";
     }
+    if (!connected)
+        j += ",\"connecting\":" + String(staConnectAttemptActive ? "true" : "false");
     j += "}";
     server.send(200, "application/json", j);
 }
@@ -1857,6 +2014,8 @@ static void handleSettingsExport()
     String apSsid = "", apPass = "", wSsid = "", wPass = "";
     String wIp = "", wGw = "", wMask = "", wDns = "";
     bool wStatic = false, beta = false, apHid = false;
+    bool h3Slew = false;
+    uint8_t h3SlewRate = kHw3SlewRateDefault;
     int canTx = -1, canRx = -1;
 
     if (p.begin(PREFS_NS, false))
@@ -1880,6 +2039,8 @@ static void handleSettingsExport()
         if (p.isKey("wifi_dns"))
             wDns = p.getString("wifi_dns", "");
         beta = p.getBool("upd_beta", false);
+        h3Slew = p.getBool("h3_slw", false);
+        h3SlewRate = dashLoadHw3SlewRate(p.getUChar("h3_srt", kHw3SlewRateDefault));
         p.end();
     }
     Preferences cp;
@@ -1896,6 +2057,8 @@ static void handleSettingsExport()
     j += ",\"static\":" + String(wStatic ? "true" : "false");
     j += ",\"ip\":\"" + jsonEscape(wIp) + "\",\"gw\":\"" + jsonEscape(wGw) + "\"";
     j += ",\"mask\":\"" + jsonEscape(wMask) + "\",\"dns\":\"" + jsonEscape(wDns) + "\"}";
+    j += ",\"plugins\":{\"replay\":" + String(pluginGetReplayCount()) + "}";
+    j += ",\"hw3\":{\"offsetSlew\":" + String(h3Slew ? "true" : "false") + ",\"slewRate\":" + String(h3SlewRate) + "}";
     j += ",\"can\":{\"tx\":" + String(canTx) + ",\"rx\":" + String(canRx) + "}";
     j += ",\"beta\":" + String(beta ? "true" : "false");
     j += "}";
@@ -1958,6 +2121,15 @@ static void handleSettingsImport()
     }
     if (doc["beta"].is<bool>())
         p.putBool("upd_beta", doc["beta"].as<bool>());
+    if (doc["plugins"].is<JsonObject>() && doc["plugins"]["replay"].is<int>())
+        p.putUChar("plg_rep", pluginClampReplayCount(doc["plugins"]["replay"].as<int>()));
+    if (doc["hw3"].is<JsonObject>())
+    {
+        if (doc["hw3"]["offsetSlew"].is<bool>())
+            p.putBool("h3_slw", doc["hw3"]["offsetSlew"].as<bool>());
+        if (doc["hw3"]["slewRate"].is<int>())
+            p.putUChar("h3_srt", dashClampHw3SlewRate(doc["hw3"]["slewRate"].as<int>()));
+    }
     p.end();
 
     if (doc["can"].is<JsonObject>())
@@ -2543,6 +2715,7 @@ static void dashPluginTestTick()
         return;
     }
 
+    pluginAdvanceRuleCounters(pluginTestState.frame, pluginTestState.rule);
     pluginTestState.nextSendAt = now + pluginTestState.intervalMs;
 }
 
@@ -2635,6 +2808,7 @@ static void mcpDashboardSetup(CarManagerBase *handler, CanDriver *driver)
 
     // Set plugin processing hook
     appPluginProcess = dashPluginProcess;
+    pluginBeforeSend = dashApplyHw3OffsetSlew;
 
     ArduinoOTA.setHostname("ev-open-can-tools");
     ArduinoOTA.setPassword(DASH_OTA_PASS);
@@ -2698,6 +2872,8 @@ static void mcpDashboardLoop()
         return;
     dashFlushPluginStatesIfDue();
     dashPluginTestTick();
+    if (canActive && dashDriver)
+        pluginEmitPeriodicTick(*dashDriver, millis());
     dashCheckBusHealth();
     if (canOnline && millis() - lastFrameMs > 10000)
     {

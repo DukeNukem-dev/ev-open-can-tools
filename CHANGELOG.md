@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0-beta.1] - 2026-04-23
+
+### Added
+- Dashboard configuration now includes a GTW 2047 plugin replay control, and settings backup/import now preserves plugin replay preferences.
+- Plugin rules now support `counter` fields and `emit_periodic` for cached GTW mux 3 broadcasts, including editor support and updated plugin documentation.
+- GTW periodic emit can now optionally try to silence native gateway broadcasts through a UDS diagnostic sequence using extended session, SecurityAccess, `CommunicationControl`, and `TesterPresent`.
+- HW3 dashboard builds now expose an optional offset slew limiter for plugin-driven mux 2 offset changes.
+- Added a WiFi dashboard regression test that covers the WiFi settings UI, backend routes, status payload, and backup fields.
+
+### Changed
+- Plugin rules now allow up to 16 operations per rule instead of 8.
+- Replayed GTW frames, periodic emits, and repeated Rule Test sends now advance counter fields and refresh checksums between sends.
+- Dashboard plugin details, validation, support exports, and docs now describe the new replay, counter, and periodic emit behavior.
+
+### Fixed
+- GTW silent-mode plugin rules now add the required UDS request/response CAN IDs to the active filter set so the diagnostic state machine can observe replies.
+- The CAN analyzer now labels UDS `0x28 CommunicationControl` requests by name.
+- WiFi Internet status now follows the live STA connection state reliably after connect attempts and page refreshes instead of getting stuck on `Connecting to ...` or `Not configured`.
+- Corrupted WiFi SSID fragments are now ignored in saved settings and filtered from `/wifi_status` responses.
+- The WiFi settings form no longer overwrites the SSID field while it is being edited, and the status header no longer depends on optional labels being present.
+
 ## [2.4.2-beta.1] - 2026-04-23
 
 ### Fixed

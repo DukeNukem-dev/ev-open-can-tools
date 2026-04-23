@@ -64,7 +64,7 @@ Each rule matches incoming CAN frames by ID (and optionally mux index), applies 
 
 Operations are applied in priority order on a **copy** of the original frame. In dashboard builds, automatic CAN writes are limited to enabled plugin rules with `send: true`; built-in handlers only observe frames for dashboard status.
 
-When multiple enabled plugin rules match the same incoming CAN ID and mux, the firmware composes one output frame and sends it once. Plugin priority decides overlapping writes: the highest-priority plugin owns a bit first, and lower-priority plugins cannot overwrite that same bit in the same frame cycle.
+When multiple enabled plugin rules match the same incoming CAN ID and mux, the firmware composes one output frame and sends it once. For GTW 2047 (`0x7FF`), the dashboard's plugin replay count can repeat that modified frame immediately. Plugin priority decides overlapping writes: the highest-priority plugin owns a bit first, and lower-priority plugins cannot overwrite that same bit in the same frame cycle.
 
 #### `set_bit` — Set or clear a single bit
 
@@ -107,6 +107,47 @@ Sets specific bits without clearing others. `data[byte] |= val`
 
 Clears specific bits without affecting others. `data[byte] &= val`
 
+#### `counter` — Increment a rolling counter field
+
+```json
+{ "type": "counter", "byte": 0, "mask": 15, "step": 1 }
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `byte` | 0-7 | Byte index in the data field. |
+| `mask` | 1-255 | Contiguous bitmask for the counter field. Defaults to `15` (0x0F, lower nibble). |
+| `step` | 1-255 | Amount to add before wrapping inside the masked field. Defaults to `1`. |
+
+The counter is read from the masked bits, incremented modulo the field width, and written back into the same bits. Place `counter` before `checksum` when the frame also uses the byte 7 vehicle checksum. Replayed GTW 2047 frames, repeated Rule Test sends, and periodic emits advance the counter again before each extra send.
+
+#### `emit_periodic` — Periodically emit the cached GTW mux 3 frame
+
+```json
+{ "type": "emit_periodic", "interval": 100, "gtw_silent": true }
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `interval` | 10-5000 | Emit interval in milliseconds. Defaults to `100`. |
+| `gtw_silent` | boolean | When `true`, runs the full UDS sequence against the gateway to suppress its native broadcasts. Defaults to `false`. |
+
+This operation is only valid on GTW 2047 (`0x7FF`) rules with `mux: 3` and `send: true`. The first matching live mux 3 frame seeds the cache after all other operations have been applied. After that, the dashboard loop sends the cached modified frame at its own interval, even if no new GTW mux 3 frame arrives.
+
+##### How `gtw_silent` actually works
+
+GTW runs a UDS server on `0x684` (request) / `0x685` (response). A bare `TesterPresent` loop is not enough: Tesla gates `CommunicationControl` behind an extended diagnostic session **and** SecurityAccess. The firmware therefore drives a small state machine:
+
+1. `0x10 0x03` — DiagnosticSessionControl → ExtendedSession
+2. `0x27 0x01` — SecurityAccess requestSeed
+3. `0x27 0x02 <key>` — SecurityAccess sendKey (key computed from the seed via `pluginGtwUdsComputeKey`)
+4. `0x28 0x01 0x01` — CommunicationControl disable-Tx
+5. `0x3E 0x00` — TesterPresent, repeated every 2 s to keep the session alive
+
+Positive responses (`SID + 0x40`) advance the state. Negative responses (`0x7F <SID> <NRC>`) surface the NRC: `0x78 responsePending` extends the wait, anything else fails the sequence and schedules a retry after the back-off window. When the CAN filter is narrowed, `0x684` and `0x685` are automatically added so responses reach the state machine.
+
+> **Key placeholder warning.** Tesla's SecurityAccess seed → key algorithm is proprietary and is **not** included in this repository. The default `pluginGtwUdsComputeKey` returns a bitwise-inverted seed so the sequence runs end-to-end and the NRC (`0x35 invalidKey`) is observable in logs, but the gateway will refuse silencing. To make `gtw_silent` actually silence GTW, define `PLUGIN_GTW_UDS_CUSTOM_KEY` at build time and supply a working `pluginGtwUdsComputeKey` implementation.
+
 #### `checksum` — Recompute the vehicle checksum
 
 ```json
@@ -124,7 +165,7 @@ Always place this as the **last** operation if the frame uses checksums.
 |----------|-------|
 | Max plugins installed | 8 |
 | Max rules per plugin | 16 |
-| Max operations per rule | 8 |
+| Max operations per rule | 16 |
 
 ## Examples
 
@@ -190,7 +231,7 @@ Click on any installed plugin name in the dashboard to expand its detail view. T
 
 - **CAN IDs** targeted by each rule (hex and decimal)
 - **Mux value** if the rule is mux-specific
-- **Operations** listed in execution order (e.g. `set_bit(46, true)`, `checksum(byte 7)`)
+- **Operations** listed in execution order (e.g. `set_bit(46, true)`, `counter(0, mask=0xf, step=1)`, `emit_periodic(100 ms)`, `checksum(byte 7)`)
 
 This lets you inspect exactly what a plugin does before enabling it.
 
@@ -201,7 +242,7 @@ When two enabled plugins target the same bit on the same CAN ID and mux, the das
 ## Important notes
 
 - Dashboard builds do not inject CAN frames from built-in handlers; enabled plugins are the automatic injection path.
-- Enabled plugin rules for the same CAN ID and mux are merged into one injected frame per incoming frame.
+- Enabled plugin rules for the same CAN ID and mux are merged into one injected frame per incoming frame; GTW 2047 can be repeated by the configured plugin replay count, and GTW mux 3 can also be kept alive with `emit_periodic`.
 - If two plugins write the same bit, the lower-priority plugin's write is ignored for that bit. Default priority is install order, with the first installed plugin at `#1`.
 - Plugin-required CAN IDs are automatically added to the hardware filter list.
 - Rule Test is a manual dashboard action that sends the preview frame only when you start it.
