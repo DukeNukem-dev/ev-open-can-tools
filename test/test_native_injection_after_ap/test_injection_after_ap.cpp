@@ -34,7 +34,7 @@ static void activateAp(CarManagerBase &handler)
 {
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
     mock.reset();

@@ -39,7 +39,7 @@ void test_dashboard_legacy_mux0_observes_ad_without_injecting()
 
     CanFrame f = {.id = 1006};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
 
     handler.handleMessage(f, mock);
 
@@ -75,7 +75,7 @@ void test_dashboard_hw3_mux0_observes_state_without_injecting()
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
     f.data[3] = 60;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
 
     handler.handleMessage(f, mock);
 
@@ -111,7 +111,7 @@ void test_dashboard_hw4_mux0_observes_ad_without_injecting()
 
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
 
     handler.handleMessage(f, mock);
 

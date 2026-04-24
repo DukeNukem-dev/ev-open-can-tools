@@ -69,7 +69,7 @@ inline bool isADSelectedInUI(const CanFrame &frame)
 {
     if (bypassTlsscRequirementRuntime)
         return true;
-    return (frame.data[4] >> 6) & 0x01;
+    return (frame.data[4] >> 5) & 0x01;
 }
 
 inline uint8_t readGTWAutopilot(const CanFrame &frame)
