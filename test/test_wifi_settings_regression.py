@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UI_FILE = ROOT / "include" / "web" / "mcp2515_dashboard_ui.h"
 DASH_FILE = ROOT / "include" / "web" / "mcp2515_dashboard.h"
+SYNC_FILE = ROOT / "scripts" / "platformio_sync_profile.py"
 
 
 class WifiSettingsRegressionTests(unittest.TestCase):
@@ -13,6 +14,7 @@ class WifiSettingsRegressionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.ui = UI_FILE.read_text(encoding="utf-8")
         cls.dash = DASH_FILE.read_text(encoding="utf-8")
+        cls.sync = SYNC_FILE.read_text(encoding="utf-8")
 
     def test_wifi_ui_has_all_expected_fields(self) -> None:
         required_ids = [
@@ -102,6 +104,32 @@ class WifiSettingsRegressionTests(unittest.TestCase):
         for field in expected_export_import_fields:
             with self.subTest(field=field):
                 self.assertIn(field, self.dash)
+
+    def test_ap_injection_gate_setting_is_persisted_and_exposed(self) -> None:
+        expected_ui_fields = [
+            'id="ap-gate-tgl"',
+            "saveApGate()",
+            "updateApGateControl(d)",
+        ]
+        expected_backend_fields = [
+            "INJECTION_AFTER_AP",
+            '"ap_gate"',
+            'server.hasArg("apg")',
+            '\\"apGate\\"',
+            '\\"ia\\"',
+            'dashInjectionActive()',
+            'doc["plugins"]["startAfterAp"]',
+        ]
+
+        for field in expected_ui_fields:
+            with self.subTest(ui_field=field):
+                self.assertIn(field, self.ui)
+
+        for field in expected_backend_fields:
+            with self.subTest(backend_field=field):
+                self.assertIn(field, self.dash)
+
+        self.assertIn("INJECTION_AFTER_AP", self.sync)
 
 
 if __name__ == "__main__":

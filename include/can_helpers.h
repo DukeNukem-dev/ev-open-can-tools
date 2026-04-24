@@ -43,11 +43,22 @@ inline constexpr bool kNagKillerDefaultEnabled = false;
 inline constexpr bool kNagKillerBuildEnabled = false;
 #endif
 
+#if defined(INJECTION_AFTER_AP) || defined(DASH_INJECTION_AFTER_AP)
+inline constexpr bool kInjectionAfterApBuildEnabled = true;
+#else
+inline constexpr bool kInjectionAfterApBuildEnabled = false;
+#endif
+
 inline Shared<bool> bypassTlsscRequirementRuntime{kBypassTlsscRequirementDefaultEnabled};
 inline Shared<bool> isaSpeedChimeSuppressRuntime{kIsaSpeedChimeSuppressDefaultEnabled};
 inline Shared<bool> emergencyVehicleDetectionRuntime{kEmergencyVehicleDetectionDefaultEnabled};
 inline Shared<bool> enhancedAutopilotRuntime{kEnhancedAutopilotDefaultEnabled};
 inline Shared<bool> nagKillerRuntime{kNagKillerDefaultEnabled};
+
+inline bool enhancedAutopilotInjectionAllowed(bool adEnabled)
+{
+    return !kInjectionAfterApBuildEnabled || adEnabled;
+}
 
 inline uint8_t readMuxID(const CanFrame &frame)
 {

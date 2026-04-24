@@ -463,6 +463,23 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
     </div>
   </div>
 
+  <div class="subsec" data-subkey="config-ap-injection-gate">
+    <div class="subsec-head">
+      <div class="subsec-title">AP Injection Gate <span class="title-help" onclick="return toggleHelp(this,event)" title="When enabled, plugins inject only after Autopilot is observed active.">?</span></div>
+      <div class="subsec-meta" id="ap-gate-meta">Off</div>
+    </div>
+    <div class="subsec-body">
+      <div class="setting-row" style="padding-top:0">
+        <div class="setting-info">
+          <div class="setting-name">Start after AP</div>
+          <div class="setting-desc">Hold plugin injection until AP or NoA is active</div>
+        </div>
+        <label class="tgl"><input type="checkbox" id="ap-gate-tgl" onchange="saveApGate()"><div class="tgl-track"><div class="tgl-thumb"></div></div></label>
+      </div>
+      <div style="font-size:11px;color:var(--tx3);margin-top:6px" id="ap-gate-status"></div>
+    </div>
+  </div>
+
   <div class="subsec" data-subkey="config-wifi-hotspot">
     <div class="subsec-head">
       <div class="subsec-title">WiFi Hotspot <span class="title-help" onclick="return toggleHelp(this,event)" data-help-target="ap-info" title="Configure the device hotspot name, password and visibility. Saved in NVS.">?</span></div>
@@ -777,7 +794,7 @@ function updateGtwBadge(v){
   el.className='gtw-badge '+(known?'known':'');
   el.title=known?('GTW_autopilot: '+gtwAutopilotName(v)+' ('+v+')'):'GTW_autopilot: not seen yet';
 }
-let state={hw:1,can:true,sp:0,plgr:1,plgrmax:20,hw3OffsetSlew:false,hw3SlewRate:5};
+let state={hw:1,can:true,apGate:false,sp:0,plgr:1,plgrmax:20,hw3OffsetSlew:false,hw3SlewRate:5};
 let sniffPaused=false,sniffFrames=[];
 let sniffShowDbcIds=localStorage.getItem('sniffIdMode')==='dbc';
 let otaFile=null;
@@ -1203,6 +1220,27 @@ async function savePluginReplay(){
   }catch(e){st.textContent='Save failed';st.style.color='var(--err)';}
 }
 
+function updateApGateControl(d){
+  const enabled=!!d.apGate;
+  state.apGate=enabled;
+  const tgl=$('ap-gate-tgl');if(tgl)tgl.checked=enabled;
+  setText('ap-gate-meta',enabled?'On':'Off');
+}
+async function saveApGate(){
+  const tgl=$('ap-gate-tgl'),st=$('ap-gate-status');
+  const enabled=tgl.checked?'1':'0';
+  st.textContent='Saving...';st.style.color='var(--tx3)';
+  try{
+    const r=await fetch('/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'apg='+enabled});
+    const d=await r.json();
+    if(!d.ok)throw new Error();
+    state.apGate=enabled==='1';
+    setText('ap-gate-meta',state.apGate?'On':'Off');
+    st.textContent='Saved';st.style.color='var(--ok)';
+    poll();
+  }catch(e){st.textContent='Save failed';st.style.color='var(--err)';}
+}
+
 async function pushLogging(){
   const body='eprn='+($('tgl-eprn').checked?'1':'0');
   try{await fetch('/logging',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});}catch(e){}
@@ -1380,18 +1418,19 @@ async function poll(){
   return runPoll('status',async()=>{
     try{
       const d=await fetchPollJson('/status',5000,true);
-    const on=!!d.can,injecting=!!d.ci,fpsVal=Number(d.fps||0);
-    state.hw=d.hw;state.sp=clampProfileForHw(d.hw,d.sp);state.can=injecting;
+    const on=!!d.can,armed=!!d.ci,injecting=typeof d.ia==='undefined'?armed:!!d.ia,fpsVal=Number(d.fps||0);
+    state.hw=d.hw;state.sp=clampProfileForHw(d.hw,d.sp);state.can=armed;
     if(typeof d.plgr!=='undefined')updatePluginReplayControl(d.plgr,d.plgrmax);
+    if(typeof d.apGate!=='undefined')updateApGateControl(d);
     updateHw3SlewControl(d);
     setClass('dot','sdot '+(d.txerr>5?'dot-warn':on?'dot-on':'dot-off'));
-    setText('hdr-desc',on?(d.AD?'AD active — injecting':'CAN active — monitoring'):'Waiting for CAN frames');
-    updateInjectButtons(injecting);
+    setText('hdr-desc',on?(injecting?(d.AD?'AD active — injecting':'CAN active — injecting'):(armed&&d.apGate?'Waiting for AP — injection armed':'CAN active — monitoring')):'Waiting for CAN frames');
+    updateInjectButtons(armed);
 
     setText('s-can',on?'Active':'Offline');
     setClass('s-can','stat-val '+(on?'v-ok':'v-err'));
-    setText('s-inj',injecting?'Active':'BLOCKED');
-    setClass('s-inj','stat-val '+(injecting?'v-ok':'v-err'));
+    setText('s-inj',injecting?'Active':(armed&&d.apGate?'Waiting AP':'BLOCKED'));
+    setClass('s-inj','stat-val '+(injecting?'v-ok':(armed&&d.apGate?'v-warn':'v-err')));
     setText('s-AD',d.AD?'Active':'Inactive');
     setClass('s-AD','stat-val '+(d.AD?'v-ok':'v-dim'));
     setText('s-fps',fpsVal.toFixed(1)+' Hz');

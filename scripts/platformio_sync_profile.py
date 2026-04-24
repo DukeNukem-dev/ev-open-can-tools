@@ -21,6 +21,7 @@ OPTIONAL_DEFINES = (
     "NAG_KILLER",
     "ENHANCED_AUTOPILOT",
 )
+DASHBOARD_OPTION_DEFINES = ("INJECTION_AFTER_AP", "DASH_INJECTION_AFTER_AP")
 # Synced for dashboard builds only (defines with literal values).
 DASHBOARD_VALUE_DEFINES = ("PLUGIN_GTW_UDS_KEY_READY",)
 CREDENTIAL_DEFINES = ("DASH_SSID", "DASH_PASS", "DASH_OTA_USER", "DASH_OTA_PASS")
@@ -153,6 +154,11 @@ else:
 selected_options = (
     [] if uses_dashboard_hw else [name for name in OPTIONAL_DEFINES if name in active]
 )
+dashboard_flag_options = (
+    [name for name in DASHBOARD_OPTION_DEFINES if name in active]
+    if uses_dashboard_hw
+    else []
+)
 dashboard_values = (
     _literal_define_values(config_text, DASHBOARD_VALUE_DEFINES)
     if uses_dashboard_hw
@@ -162,6 +168,8 @@ dashboard_options = []
 if uses_dashboard_hw:
     for name in DASHBOARD_VALUE_DEFINES:
         if name not in active:
+            continue
+        if name in project_defines:
             continue
         if name not in dashboard_values:
             raise UserError(
@@ -196,7 +204,7 @@ if not uses_dashboard_hw and env_vehicle and env_vehicle != [selected_vehicle]:
 if uses_dashboard_hw:
     dash_hw_val = _DASH_HW_MAP[selected_vehicle]
     _set_cppdefine(env, "DASH_DEFAULT_HW", dash_hw_val)
-    sync_defines = dashboard_options
+    sync_defines = dashboard_flag_options + dashboard_options
 else:
     sync_defines = [selected_vehicle] + selected_options
 

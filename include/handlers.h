@@ -200,7 +200,7 @@ struct HW3Handler : public CarManagerBase
 #if !defined(ESP32_DASHBOARD)
                 bool modified = false;
 #if defined(ENHANCED_AUTOPILOT)
-                if (enhancedAutopilotRuntime)
+                if (enhancedAutopilotRuntime && enhancedAutopilotInjectionAllowed(ADEnabled))
                 {
                     setBit(frame, 19, false);
                     setBit(frame, 46, true);
@@ -447,7 +447,7 @@ struct HW4Handler : public CarManagerBase
 #if !defined(ESP32_DASHBOARD)
                 bool modified = false;
 #if defined(ENHANCED_AUTOPILOT)
-                if (enhancedAutopilotRuntime)
+                if (enhancedAutopilotRuntime && enhancedAutopilotInjectionAllowed(ADEnabled))
                 {
                     setBit(frame, 19, false);
                     setBit(frame, 47, true);

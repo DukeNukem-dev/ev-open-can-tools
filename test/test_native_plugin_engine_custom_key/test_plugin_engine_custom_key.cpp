@@ -144,9 +144,9 @@ void test_gtw_silent_key_request_uses_configured_xor_byte()
     TEST_ASSERT_EQUAL_HEX8(0x05, driver.sent[2].data[0]);
     TEST_ASSERT_EQUAL_HEX8(0x27, driver.sent[2].data[1]);
     TEST_ASSERT_EQUAL_HEX8(0x02, driver.sent[2].data[2]);
-    TEST_ASSERT_EQUAL_HEX8(0x35, driver.sent[2].data[3]);
-    TEST_ASSERT_EQUAL_HEX8(0x00, driver.sent[2].data[4]);
-    TEST_ASSERT_EQUAL_HEX8(0xCA, driver.sent[2].data[5]);
+    TEST_ASSERT_EQUAL_HEX8(0x00 ^ PLUGIN_GTW_UDS_KEY_READY, driver.sent[2].data[3]);
+    TEST_ASSERT_EQUAL_HEX8(0x35 ^ PLUGIN_GTW_UDS_KEY_READY, driver.sent[2].data[4]);
+    TEST_ASSERT_EQUAL_HEX8(0xFF ^ PLUGIN_GTW_UDS_KEY_READY, driver.sent[2].data[5]);
 }
 
 int main()

@@ -46,6 +46,12 @@ static constexpr bool kDashInjectionDefaultEnabled = true;
 static constexpr bool kDashInjectionDefaultEnabled = false;
 #endif
 
+#if defined(INJECTION_AFTER_AP) || defined(DASH_INJECTION_AFTER_AP)
+static constexpr bool kDashApGateDefaultEnabled = true;
+#else
+static constexpr bool kDashApGateDefaultEnabled = false;
+#endif
+
 #if defined(DRIVER_TWAI)
 #ifndef TWAI_TX_PIN
 #define TWAI_TX_PIN GPIO_NUM_5
@@ -94,6 +100,7 @@ static const uint8_t mcpEflg = 0;
 
 static uint8_t hwMode = DASH_DEFAULT_HW;
 static bool canActive = kDashInjectionDefaultEnabled;
+static bool apInjectionGate = kDashApGateDefaultEnabled;
 
 static constexpr uint8_t kHw3SlewRateMin = 1;
 static constexpr uint8_t kHw3SlewRateMax = 25;
@@ -400,6 +407,16 @@ static bool dashCheckADEnabled()
     return canActive;
 }
 
+static bool dashApInjectionAllowed()
+{
+    return !apInjectionGate || (dashHandler && (bool)dashHandler->ADEnabled);
+}
+
+static bool dashInjectionActive()
+{
+    return canActive && dashApInjectionAllowed();
+}
+
 static bool dashCheckNagDisabled()
 {
     return false;
@@ -506,6 +523,7 @@ static void dashSavePrefs()
     prefs.putUChar("hw", hwMode);
     prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     prefs.putBool("can", canActive);
+    prefs.putBool("ap_gate", apInjectionGate);
     prefs.putBool("eprn", dashHandler ? (bool)dashHandler->enablePrint : true);
     prefs.putUChar("plg_rep", pluginGetReplayCount());
     prefs.putBool("h3_slw", hw3OffsetSlew);
@@ -610,6 +628,7 @@ static void dashLoadPrefs()
     if (storedDefaultHw != DASH_DEFAULT_HW)
         prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     canActive = prefs.getBool("can", kDashInjectionDefaultEnabled);
+    apInjectionGate = prefs.getBool("ap_gate", kDashApGateDefaultEnabled);
     pluginSetReplayCount(prefs.getUChar("plg_rep", PLUGIN_REPLAY_COUNT));
     hw3OffsetSlew = prefs.getBool("h3_slw", false);
     hw3SlewRate = dashLoadHw3SlewRate(prefs.getUChar("h3_srt", kHw3SlewRateDefault));
@@ -897,6 +916,10 @@ static void handleStatus()
     j += pluginGetReplayCount();
     j += ",\"plgrmax\":";
     j += PLUGIN_REPLAY_COUNT_MAX;
+    j += ",\"apGate\":";
+    j += apInjectionGate ? "true" : "false";
+    j += ",\"ia\":";
+    j += dashInjectionActive() ? "true" : "false";
     j += ",\"hw3OffsetSlew\":";
     j += hw3OffsetSlew ? "true" : "false";
     j += ",\"hw3SlewRate\":";
@@ -986,6 +1009,15 @@ static void handleConfig()
     }
     if (server.hasArg("can"))
         canActive = server.arg("can") == "1";
+    if (server.hasArg("apg"))
+    {
+        bool v = server.arg("apg") == "1";
+        if (v != apInjectionGate)
+        {
+            apInjectionGate = v;
+            dashLog("[CFG] AP injection gate " + String(v ? "ON" : "OFF"));
+        }
+    }
     if (server.hasArg("plgr"))
     {
         uint8_t previous = pluginGetReplayCount();
@@ -2031,7 +2063,7 @@ static void handleSettingsExport()
     Preferences p;
     String apSsid = "", apPass = "", wSsid = "", wPass = "";
     String wIp = "", wGw = "", wMask = "", wDns = "";
-    bool wStatic = false, beta = false, apHid = false;
+    bool wStatic = false, beta = false, apHid = false, startAfterAp = false;
     bool h3Slew = false;
     uint8_t h3SlewRate = kHw3SlewRateDefault;
     int canTx = -1, canRx = -1;
@@ -2057,6 +2089,7 @@ static void handleSettingsExport()
         if (p.isKey("wifi_dns"))
             wDns = p.getString("wifi_dns", "");
         beta = p.getBool("upd_beta", false);
+        startAfterAp = p.getBool("ap_gate", kDashApGateDefaultEnabled);
         h3Slew = p.getBool("h3_slw", false);
         h3SlewRate = dashLoadHw3SlewRate(p.getUChar("h3_srt", kHw3SlewRateDefault));
         p.end();
@@ -2075,7 +2108,8 @@ static void handleSettingsExport()
     j += ",\"static\":" + String(wStatic ? "true" : "false");
     j += ",\"ip\":\"" + jsonEscape(wIp) + "\",\"gw\":\"" + jsonEscape(wGw) + "\"";
     j += ",\"mask\":\"" + jsonEscape(wMask) + "\",\"dns\":\"" + jsonEscape(wDns) + "\"}";
-    j += ",\"plugins\":{\"replay\":" + String(pluginGetReplayCount()) + "}";
+    j += ",\"plugins\":{\"replay\":" + String(pluginGetReplayCount()) +
+         ",\"startAfterAp\":" + String(startAfterAp ? "true" : "false") + "}";
     j += ",\"hw3\":{\"offsetSlew\":" + String(h3Slew ? "true" : "false") + ",\"slewRate\":" + String(h3SlewRate) + "}";
     j += ",\"can\":{\"tx\":" + String(canTx) + ",\"rx\":" + String(canRx) + "}";
     j += ",\"beta\":" + String(beta ? "true" : "false");
@@ -2141,6 +2175,8 @@ static void handleSettingsImport()
         p.putBool("upd_beta", doc["beta"].as<bool>());
     if (doc["plugins"].is<JsonObject>() && doc["plugins"]["replay"].is<int>())
         p.putUChar("plg_rep", pluginClampReplayCount(doc["plugins"]["replay"].as<int>()));
+    if (doc["plugins"].is<JsonObject>() && doc["plugins"]["startAfterAp"].is<bool>())
+        p.putBool("ap_gate", doc["plugins"]["startAfterAp"].as<bool>());
     if (doc["hw3"].is<JsonObject>())
     {
         if (doc["hw3"]["offsetSlew"].is<bool>())
@@ -2687,7 +2723,7 @@ static void dashPluginTestCapture(const CanFrame &frame)
 
 static void dashPluginProcess(const CanFrame &frame, CanDriver &driver)
 {
-    if (!canActive)
+    if (!dashInjectionActive())
         return;
     dashPluginTestCapture(frame);
     pluginProcessFrame(frame, driver);
@@ -2705,6 +2741,8 @@ static void dashPluginTestTick()
         dashLog("[PLGTEST] Stopped: injection disabled");
         return;
     }
+    if (!dashApInjectionAllowed())
+        return;
     if (!dashDriver)
     {
         pluginTestState.active = false;
@@ -2890,7 +2928,7 @@ static void mcpDashboardLoop()
         return;
     dashFlushPluginStatesIfDue();
     dashPluginTestTick();
-    if (canActive && dashDriver)
+    if (dashInjectionActive() && dashDriver)
         pluginEmitPeriodicTick(*dashDriver, millis());
     dashCheckBusHealth();
     if (canOnline && millis() - lastFrameMs > 10000)
