@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0-beta.2] - 2026-04-24
+
+### Fixed
+- Dashboard CAN sniffer and recorder buffers now clamp incoming frame DLC before copying frame data.
+- Plugin mux matching now ignores zero-DLC frames instead of treating them as mux 0.
+
 ## [2.5.0-beta.1] - 2026-04-23
 
 ### Added

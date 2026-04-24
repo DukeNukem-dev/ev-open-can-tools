@@ -269,8 +269,9 @@ static const char *decodeCanId(uint32_t id)
 
 static void sniffPush(const CanFrame &f)
 {
-    sniffBuf[sniffHead] = {millis(), f.id, f.dlc, {}};
-    memcpy(sniffBuf[sniffHead].data, f.data, f.dlc);
+    uint8_t dlc = (f.dlc <= 8) ? f.dlc : 8;
+    sniffBuf[sniffHead] = {millis(), f.id, dlc, {}};
+    memcpy(sniffBuf[sniffHead].data, f.data, dlc);
     sniffHead = (sniffHead + 1) % SNIFFER_CAP;
     if (sniffCount < SNIFFER_CAP)
         sniffCount++;
@@ -305,23 +306,24 @@ static void mcpDashOnFrame(const CanFrame &f)
     canOnline = true;
     fpsFrames++;
     sniffPush(f);
-    if (f.id == 1021)
+    if (f.id == 1021 && f.dlc > 0)
     {
         uint8_t m = f.data[0] & 0x07;
         if (m < 4)
             muxRx[m]++;
     }
-    if (f.id == 1016)
+    if (f.id == 1016 && f.dlc > 5)
         followDist = (f.data[5] & 0xE0) >> 5;
     if (recActive)
     {
         int idx = recCount;
         if (idx < REC_CAP)
         {
+            uint8_t dlc = (f.dlc <= 8) ? f.dlc : 8;
             recBuf[idx].ts = millis();
             recBuf[idx].id = f.id;
-            recBuf[idx].dlc = f.dlc;
-            memcpy(recBuf[idx].data, f.data, f.dlc);
+            recBuf[idx].dlc = dlc;
+            memcpy(recBuf[idx].data, f.data, dlc);
             recCount = idx + 1;
             if (recCount >= REC_CAP)
                 recActive = false;

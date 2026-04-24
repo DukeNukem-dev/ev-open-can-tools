@@ -965,6 +965,8 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
 
             if (rule.mux >= 0)
             {
+                if (original.dlc == 0)
+                    continue;
                 uint8_t frameMux = original.data[0] & 0x07;
                 if (frameMux != (uint8_t)rule.mux)
                     continue;
