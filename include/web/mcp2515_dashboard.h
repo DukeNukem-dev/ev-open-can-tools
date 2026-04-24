@@ -1334,11 +1334,7 @@ static bool dashPluginTestRuleMatches(const PluginRule &rule, const CanFrame &fr
 {
     if (rule.canId != frame.id)
         return false;
-    if (rule.mux < 0)
-        return true;
-    if (frame.dlc == 0)
-        return false;
-    return (frame.data[0] & 0x07) == (uint8_t)rule.mux;
+    return pluginRuleMatchesBus(rule, frame) && pluginRuleMatchesMux(rule, frame);
 }
 
 static bool dashBuildPluginTestFrame(const PluginRule &rule, const CanFrame &base, CanFrame &frame, String &error)
@@ -1380,6 +1376,8 @@ static void handlePluginList()
             j += "{\"id\":" + String(rule.canId);
             j += ",\"hex\":\"0x" + String(rule.canId, HEX) + "\"";
             j += ",\"mux\":" + String(rule.mux);
+            j += ",\"mux_mask\":" + String(rule.muxMask);
+            j += ",\"bus\":" + String(rule.busMask);
             j += ",\"send\":" + String(rule.sendAfter ? "true" : "false");
             j += ",\"ops\":[";
             for (uint8_t o = 0; o < rule.opCount; o++)

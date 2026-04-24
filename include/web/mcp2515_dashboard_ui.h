@@ -1682,7 +1682,9 @@ function pluginOpBits(o){
   if(o.type==='emit_periodic')return[];
   return[];
 }
-function pluginMuxesOverlap(a,b){return a<0||b<0||a===b;}
+function pluginRuleMuxMask(r){return r&&typeof r.mux_mask==='number'?r.mux_mask:peDefaultMuxMask(r&&typeof r.mux==='number'?r.mux:-1);}
+function pluginMuxesOverlap(a,am,b,bm){if(a<0||b<0)return true;const mask=(am||peDefaultMuxMask(a))&(bm||peDefaultMuxMask(b));return !mask||((a&mask)===(b&mask));}
+function pluginBusesOverlap(a,b){return !a||!b||((a&b)!==0);}
 function pluginFormatBits(bits){
   bits=Array.from(new Set(bits)).sort((a,b)=>a-b);
   if(bits.length>6)return bits.slice(0,6).join(', ')+', +'+(bits.length-6)+' more';
@@ -1710,10 +1712,10 @@ function pluginAnalyzePriority(list){
       const conflicts=[];
       (r.ops||[]).forEach(o=>{
         pluginOpBits(o).forEach(bit=>{
-          const owner=owners.find(x=>x.id===r.id&&pluginMuxesOverlap(x.mux,r.mux)&&x.bit===bit);
+          const owner=owners.find(x=>x.id===r.id&&pluginBusesOverlap(x.bus,r.bus)&&pluginMuxesOverlap(x.mux,x.mux_mask,r.mux,pluginRuleMuxMask(r))&&x.bit===bit);
           if(owner){
             if(owner.plugin!==p.name)conflicts.push({bit:bit,winner:owner.plugin,winnerPriority:owner.priority});
-          }else owners.push({id:r.id,mux:r.mux,bit:bit,plugin:p.name,priority:i+1});
+          }else owners.push({id:r.id,bus:r.bus||0,mux:r.mux,mux_mask:pluginRuleMuxMask(r),bit:bit,plugin:p.name,priority:i+1});
         });
       });
       if(conflicts.length){r.pluginConflict=true;r.conflicts=conflicts;p.hasConflict=true;}
@@ -1728,7 +1730,7 @@ function renderPluginConflictPanel(list){
   const rows=[];
   (list||[]).forEach(p=>(p.details||[]).forEach(r=>{
     if(r.pluginConflict)pluginConflictGroups(r.conflicts).forEach(g=>{
-      rows.push('<div>CAN '+r.hex+(r.mux>=0?' mux '+r.mux:' any mux')+': '+p.name+' ignores bit '+pluginFormatBits(g.bits)+'; '+g.winner+' (#'+g.winnerPriority+') wins</div>');
+      rows.push('<div>CAN '+r.hex+(r.bus?(' '+peBusLabel(r.bus)):'')+(r.mux>=0?' mux '+r.mux+'/0x'+pluginRuleMuxMask(r).toString(16):' any mux')+': '+p.name+' ignores bit '+pluginFormatBits(g.bits)+'; '+g.winner+' (#'+g.winnerPriority+') wins</div>');
     });
   }));
   let h='<div style="padding:8px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;font-size:11px;color:var(--tx3);line-height:1.5">';
@@ -1761,7 +1763,8 @@ function renderPluginDetails(details){
   return '<div style="margin-top:6px;padding:8px;background:var(--bg2);border-radius:6px;font-size:11px;font-family:monospace">'
     +details.map(r=>{
       let hdr='<div style="margin-bottom:4px"><b>CAN '+r.hex+' ('+r.id+')</b>';
-      if(r.mux>=0) hdr+=' <span style="color:var(--acc)">mux='+r.mux+'</span>';
+      if(r.bus) hdr+=' <span style="color:var(--acc)">'+peBusLabel(r.bus)+'</span>';
+      if(r.mux>=0) hdr+=' <span style="color:var(--acc)">mux='+r.mux+'/0x'+pluginRuleMuxMask(r).toString(16)+'</span>';
       if(r.pluginConflict) hdr+=' <span style="color:var(--warn);font-weight:bold" title="Lower priority bits are ignored">&#9888; Priority overlap</span>';
       hdr+='</div>';
       let ops=r.ops.map(o=>'<div style="padding-left:12px;color:var(--tx2)">'+fmtOp(o)+'</div>').join('');
@@ -2028,10 +2031,12 @@ async function importSettings(ev){
 let peState={rules:[]};
 function peGetMeta(){return{name:($('pe-name').value||'').trim(),version:($('pe-version').value||'1.0').trim(),author:($('pe-author').value||'').trim()};}
 function peParseInt(s,def){if(typeof s==='number')return s;if(s===''||s==null)return def;s=String(s).trim();let n=s.toLowerCase().startsWith('0x')?parseInt(s,16):parseInt(s,10);return isNaN(n)?def:n;}
+function peBusLabel(v){if(v===undefined||v===null||v===''||v===0)return'';if(Array.isArray(v))return v.join(',');if(typeof v==='number'){let out=[];if(v&1)out.push('CH');if(v&2)out.push('VEH');if(v&4)out.push('PARTY');return out.join(',');}return String(v);}
+function peDefaultMuxMask(mux){return mux<0?0:(mux>7?255:7);}
 function peSetStatus(msg,kind){const el=$('pe-status');el.textContent=msg;el.style.color=kind==='ok'?'var(--ok)':kind==='err'?'var(--err)':kind==='acc'?'var(--acc)':'var(--tx3)';}
 function peSetTestStatus(msg,kind){const el=$('pe-test-status');el.textContent=msg;el.style.color=kind==='ok'?'var(--ok)':kind==='err'?'var(--err)':kind==='acc'?'var(--acc)':'var(--tx3)';}
 function peHasContent(){const meta=peGetMeta();return !!(meta.name||meta.author||meta.version!=='1.0'||peState.rules.length);}
-function peRuleLabel(r,i){return 'Rule '+(i+1)+' · CAN 0x'+toHex((r.id||0)&0x7FF,3)+(r.mux>=0?' · mux '+r.mux:'');}
+function peRuleLabel(r,i){return 'Rule '+(i+1)+' · CAN 0x'+toHex((r.id||0)&0x7FF,3)+(r.mux>=0?' · mux '+r.mux:'')+(peBusLabel(r.bus)?' · '+peBusLabel(r.bus):'');}
 function peParseShortcutLine(line){
   const raw=(line||'').trim();
   if(!raw)return{error:'Shortcut line required'};
@@ -2040,11 +2045,11 @@ function peParseShortcutLine(line){
   const canId=peParseInt(m[1],NaN),mux=m[2]===undefined?-1:peParseInt(m[2],NaN);
   const byte=peParseInt(m[3],NaN),val=peParseInt(m[4],NaN),mask=m[5]===undefined?255:peParseInt(m[5],NaN);
   if(isNaN(canId)||canId<1||canId>0x7FF)return{error:'CAN ID must be 1-0x7FF'};
-  if(isNaN(mux)||mux<-1||mux>7)return{error:'mux must be -1..7'};
+  if(isNaN(mux)||mux<-1||mux>255)return{error:'mux must be -1..255'};
   if(isNaN(byte)||byte<0||byte>7)return{error:'byte must be 0-7'};
   if(isNaN(val)||val<0||val>255)return{error:'value must be 0-255'};
   if(isNaN(mask)||mask<0||mask>255)return{error:'mask must be 0-255'};
-  return{rule:{id:canId|0,mux:mux|0,send:true,ops:[{type:'set_byte',byte:byte|0,val:val|0,mask:mask|0}]},note:raw};
+  return{rule:{id:canId|0,mux:mux|0,mux_mask:peDefaultMuxMask(mux|0),bus:'',send:true,ops:[{type:'set_byte',byte:byte|0,val:val|0,mask:mask|0}]},note:raw};
 }
 function peUpdateRuleOptions(){
   const sel=$('pe-test-rule');if(!sel)return;
@@ -2054,7 +2059,7 @@ function peUpdateRuleOptions(){
   sel.innerHTML=peState.rules.map((r,i)=>'<option value="'+i+'">'+peRuleLabel(r,i)+'</option>').join('');
   sel.value=String(!isNaN(prev)&&prev>=0&&prev<peState.rules.length?prev:0);
 }
-function peAddRule(){if(peState.rules.length>=16){peSetStatus('Max 16 rules per plugin','err');return;}peState.rules.push({id:0,mux:-1,send:true,ops:[]});peRender();}
+function peAddRule(){if(peState.rules.length>=16){peSetStatus('Max 16 rules per plugin','err');return;}peState.rules.push({id:0,mux:-1,mux_mask:0,bus:'',send:true,ops:[]});peRender();}
 function peAddRuleFromShortcut(){
   if(peState.rules.length>=16){peSetStatus('Max 16 rules per plugin','err');return;}
   const input=$('pe-shortcut');const parsed=peParseShortcutLine(input.value);
@@ -2078,7 +2083,9 @@ function peRemoveOp(i,j){peState.rules[i].ops.splice(j,1);peRender();}
 function peUpdateField(i,j,field,value){
   if(j<0){const r=peState.rules[i];if(!r)return;
     if(field==='id')r.id=peParseInt(value,0);
-    else if(field==='mux'){r.mux=value===''?-1:peParseInt(value,-1);}
+    else if(field==='mux'){const oldDefault=peDefaultMuxMask(r.mux);const oldMask=r.mux_mask||0;r.mux=value===''?-1:peParseInt(value,-1);if(!oldMask||oldMask===oldDefault)r.mux_mask=peDefaultMuxMask(r.mux);}
+    else if(field==='mux_mask')r.mux_mask=Math.max(0,Math.min(255,peParseInt(value,peDefaultMuxMask(r.mux))));
+    else if(field==='bus')r.bus=String(value||'').trim().toUpperCase();
     else if(field==='send')r.send=!!value;
     peRender();return;
   }
@@ -2130,11 +2137,14 @@ function peOpRow(i,j,op){
 function peRuleBlock(i,r){
   const ops=r.ops.length?r.ops.map((op,j)=>peOpRow(i,j,op)).join(''):'<div style="font-size:11px;color:var(--tx3);padding:4px 0">No ops &mdash; add one below</div>';
   const hex=r.id?'0x'+r.id.toString(16).toUpperCase():'?';
+  const muxMask=r.mux_mask===undefined?peDefaultMuxMask(r.mux):r.mux_mask;
   return '<details open style="margin-bottom:10px;border:1px solid var(--bd);border-radius:6px;padding:8px;background:var(--bg2)">'+
-    '<summary style="cursor:pointer;font-size:12px;color:var(--tx);user-select:none">Rule '+(i+1)+' &mdash; CAN '+hex+(r.id?' ('+r.id+')':'')+(r.mux>=0?' mux='+r.mux:'')+' &middot; '+r.ops.length+' op'+(r.ops.length===1?'':'s')+'</summary>'+
+    '<summary style="cursor:pointer;font-size:12px;color:var(--tx);user-select:none">Rule '+(i+1)+' &mdash; CAN '+hex+(r.id?' ('+r.id+')':'')+(r.mux>=0?' mux='+r.mux:'')+(peBusLabel(r.bus)?' '+peBusLabel(r.bus):'')+' &middot; '+r.ops.length+' op'+(r.ops.length===1?'':'s')+'</summary>'+
     '<div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">'+
       '<input class="sniff-input" style="width:110px" value="'+(r.id?('0x'+(r.id|0).toString(16).toUpperCase()):'')+'" placeholder="CAN / 0x7FF" onchange="peUpdateField('+i+',-1,\'id\',this.value)">'+
-      '<input class="sniff-input" style="width:100px" type="number" min="-1" max="7" value="'+r.mux+'" placeholder="mux (-1=any)" onchange="peUpdateField('+i+',-1,\'mux\',this.value)">'+
+      '<input class="sniff-input" style="width:100px" type="number" min="-1" max="255" value="'+r.mux+'" placeholder="mux (-1=any)" onchange="peUpdateField('+i+',-1,\'mux\',this.value)">'+
+      '<input class="sniff-input" style="width:82px" value="0x'+((muxMask||0)&255).toString(16)+'" placeholder="mux mask" title="mux mask, e.g. 0x7, 0xf, 0xff" onchange="peUpdateField('+i+',-1,\'mux_mask\',this.value)">'+
+      '<input class="sniff-input" style="width:96px" value="'+peBusLabel(r.bus)+'" placeholder="bus" title="CH, VEH, PARTY, or comma list" onchange="peUpdateField('+i+',-1,\'bus\',this.value)">'+
       '<label style="font-size:11px;color:var(--tx3);display:flex;align-items:center;gap:4px"><input type="checkbox"'+(r.send?' checked':'')+' onchange="peUpdateField('+i+',-1,\'send\',this.checked)"> send</label>'+
       '<button class="sniff-btn" style="margin-left:auto" onclick="peRemoveRule('+i+')">Remove Rule</button>'+
     '</div>'+
@@ -2166,6 +2176,9 @@ function peBuildObj(){
   obj.rules=peState.rules.map(r=>{
     const out={id:r.id|0};
     if(r.mux>=0)out.mux=r.mux|0;
+    const muxMask=r.mux_mask===undefined?peDefaultMuxMask(r.mux):r.mux_mask;
+    if(r.mux>=0&&muxMask&&muxMask!==peDefaultMuxMask(r.mux))out.mux_mask=muxMask|0;
+    if(peBusLabel(r.bus))out.bus=peBusLabel(r.bus);
     if(r.send===false)out.send=false;
     out.ops=r.ops.map(op=>{
       const o={type:op.type};
@@ -2214,7 +2227,7 @@ async function peLoadInstalledPlugin(idx){
   const p=installedPlugins[idx];if(!p)return;
   if(peHasContent()&&!await dashConfirm('Load installed plugin into the editor? Current editor contents will be replaced.','Load plugin','Load'))return;
   $('pe-name').value=p.name||'';$('pe-author').value=p.author||'';$('pe-version').value=p.version||'1.0';
-  peState={rules:(p.details||[]).map(r=>({id:r.id|0,mux:typeof r.mux==='number'?r.mux:-1,send:r.send!==false,ops:(r.ops||[]).map(op=>{const out={type:op.type};if(op.type==='set_bit'){out.bit=op.bit|0;out.val=op.val?1:0;}else if(op.type==='set_byte'){out.byte=op.byte|0;out.val=(op.val|0)&255;out.mask=((typeof op.mask==='number'?op.mask:255)|0)&255;}else if(op.type==='or_byte'||op.type==='and_byte'){out.byte=op.byte|0;out.val=(op.val|0)&255;}else if(op.type==='counter'){out.byte=op.byte|0;out.mask=((typeof op.mask==='number'?op.mask:15)|0)&255;out.step=Math.max(1,((typeof op.step==='number'?op.step:1)|0)&255);}else if(op.type==='emit_periodic'){out.interval=Math.max(10,Math.min(5000,(typeof op.interval==='number'?op.interval:100)|0));out.gtw_silent=!!op.gtw_silent;}return out;})}))};
+  peState={rules:(p.details||[]).map(r=>({id:r.id|0,mux:typeof r.mux==='number'?r.mux:-1,mux_mask:typeof r.mux_mask==='number'?r.mux_mask:peDefaultMuxMask(typeof r.mux==='number'?r.mux:-1),bus:peBusLabel(r.bus),send:r.send!==false,ops:(r.ops||[]).map(op=>{const out={type:op.type};if(op.type==='set_bit'){out.bit=op.bit|0;out.val=op.val?1:0;}else if(op.type==='set_byte'){out.byte=op.byte|0;out.val=(op.val|0)&255;out.mask=((typeof op.mask==='number'?op.mask:255)|0)&255;}else if(op.type==='or_byte'||op.type==='and_byte'){out.byte=op.byte|0;out.val=(op.val|0)&255;}else if(op.type==='counter'){out.byte=op.byte|0;out.mask=((typeof op.mask==='number'?op.mask:15)|0)&255;out.step=Math.max(1,((typeof op.step==='number'?op.step:1)|0)&255);}else if(op.type==='emit_periodic'){out.interval=Math.max(10,Math.min(5000,(typeof op.interval==='number'?op.interval:100)|0));out.gtw_silent=!!op.gtw_silent;}return out;})}))};
   peLoadedPluginName=p.name||'';peStopTestPoll();peSetTestStatus('Idle','');peRender();peSetStatus('Loaded "'+p.name+'" into editor','ok');
   $('pe-name').scrollIntoView({behavior:'smooth',block:'center'});
 }
@@ -2226,7 +2239,8 @@ function peValidate(){
   for(let i=0;i<peState.rules.length;i++){
     const r=peState.rules[i];
     if(!r.id||r.id<1||r.id>2047)return 'Rule '+(i+1)+': CAN ID must be 1-2047';
-    if(r.mux<-1||r.mux>7)return 'Rule '+(i+1)+': mux must be -1..7';
+    if(r.mux<-1||r.mux>255)return 'Rule '+(i+1)+': mux must be -1..255';
+    if(r.mux>=0&&(r.mux_mask<1||r.mux_mask>255))return 'Rule '+(i+1)+': mux mask must be 1-255';
     if(!r.ops.length)return 'Rule '+(i+1)+': add at least one op';
     for(let j=0;j<r.ops.length;j++){
       const op=r.ops[j];

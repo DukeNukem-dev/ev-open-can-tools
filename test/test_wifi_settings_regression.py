@@ -69,16 +69,16 @@ class WifiSettingsRegressionTests(unittest.TestCase):
 
     def test_wifi_status_payload_covers_connection_and_config_state(self) -> None:
         expected_fields = [
-            '"connected"',
-            '"ssid"',
-            '"stored"',
-            '"ip"',
-            '"static"',
-            '"cfg_ip"',
-            '"cfg_gw"',
-            '"cfg_mask"',
-            '"cfg_dns"',
-            '"connecting"',
+            '\\"connected\\"',
+            '\\"ssid\\"',
+            '\\"stored\\"',
+            '\\"ip\\"',
+            '\\"static\\"',
+            '\\"cfg_ip\\"',
+            '\\"cfg_gw\\"',
+            '\\"cfg_mask\\"',
+            '\\"cfg_dns\\"',
+            '\\"connecting\\"',
         ]
 
         status_section = self.dash[self.dash.index("static void handleWifiStatus()") :]
@@ -88,7 +88,7 @@ class WifiSettingsRegressionTests(unittest.TestCase):
 
     def test_wifi_settings_backup_roundtrip_fields_exist(self) -> None:
         expected_export_import_fields = [
-            '"wifi":{"ssid"',
+            '\\"wifi\\":{\\"ssid\\"',
             'doc["wifi"].is<JsonObject>()',
             'doc["wifi"]["ssid"]',
             'doc["wifi"]["pass"]',

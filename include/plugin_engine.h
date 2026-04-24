@@ -1,9 +1,14 @@
 #pragma once
 
-#if defined(ESP32_DASHBOARD) && !defined(NATIVE_BUILD)
+#if defined(ESP32_DASHBOARD) && (!defined(NATIVE_BUILD) || defined(PLUGIN_ENGINE_NATIVE_TEST))
 
 #include <ArduinoJson.h>
+#if defined(NATIVE_BUILD)
+#include <string>
+using String = std::string;
+#else
 #include <SPIFFS.h>
+#endif
 #include "can_frame_types.h"
 #include "can_helpers.h"
 #include "drivers/can_driver.h"
@@ -11,6 +16,9 @@
 #define PLUGIN_MAX 8
 #define PLUGIN_RULES_MAX 16
 #define PLUGIN_OPS_MAX 16
+#ifndef PLUGIN_FILTER_IDS_MAX
+#define PLUGIN_FILTER_IDS_MAX 32
+#endif
 #ifndef PLUGIN_REPLAY_COUNT
 #define PLUGIN_REPLAY_COUNT 1
 #endif
@@ -68,6 +76,7 @@ struct PluginGtwUdsMachine
     uint8_t lastNrc;
     uint8_t seed[PLUGIN_GTW_UDS_SEED_MAX];
     uint8_t seedLen;
+    uint8_t bus;
 };
 
 struct PluginPeriodicEmitState
@@ -86,7 +95,9 @@ struct PluginPeriodicEmitState
 struct PluginRule
 {
     uint32_t canId;
-    int8_t mux; // -1 = match any mux
+    int16_t mux; // -1 = match any mux
+    uint8_t muxMask;
+    uint8_t busMask;
     PluginOp ops[PLUGIN_OPS_MAX];
     uint8_t opCount;
     bool sendAfter;
@@ -103,7 +114,7 @@ struct PluginData
     uint8_t priority;
     PluginRule rules[PLUGIN_RULES_MAX];
     uint8_t ruleCount;
-    uint32_t filterIds[PLUGIN_RULES_MAX];
+    uint32_t filterIds[PLUGIN_FILTER_IDS_MAX];
     uint8_t filterIdCount;
 };
 
@@ -148,6 +159,15 @@ static void pluginResetPeriodicEmit()
     pluginPeriodicEmit = {};
 }
 
+static bool pluginGtwSilentSupported()
+{
+#if defined(PLUGIN_GTW_UDS_CUSTOM_KEY)
+    return true;
+#else
+    return false;
+#endif
+}
+
 // ── GTW UDS SILENCING KEY HOOK ──────────────────────────────────
 //
 // SecurityAccess key computation. Tesla uses a proprietary seed→key
@@ -159,20 +179,19 @@ static void pluginResetPeriodicEmit()
 //                                        uint8_t *outKey, uint8_t &outLen);
 // Return true and fill outKey[0..outLen-1] with the computed key.
 //
-// The placeholder below bitwise-inverts the seed and flags success so the
-// state machine proceeds and the NRC (if any) surfaces in logs. It is
-// NOT the Tesla algorithm.
+// Without PLUGIN_GTW_UDS_CUSTOM_KEY, gtw_silent is ignored at parse time.
+// This fallback returns false if called directly so a build cannot silently
+// pretend that gateway silencing is available.
 
 #ifndef PLUGIN_GTW_UDS_CUSTOM_KEY
 static bool pluginGtwUdsComputeKey(const uint8_t *seed, uint8_t seedLen,
                                    uint8_t *outKey, uint8_t &outLen)
 {
-    if (seedLen == 0 || seedLen > PLUGIN_GTW_UDS_SEED_MAX)
-        return false;
-    for (uint8_t i = 0; i < seedLen; i++)
-        outKey[i] = static_cast<uint8_t>(~seed[i]);
-    outLen = seedLen;
-    return true;
+    (void)seed;
+    (void)seedLen;
+    (void)outKey;
+    outLen = 0;
+    return false;
 }
 #else
 extern bool pluginGtwUdsComputeKey(const uint8_t *seed, uint8_t seedLen,
@@ -181,11 +200,12 @@ extern bool pluginGtwUdsComputeKey(const uint8_t *seed, uint8_t seedLen,
 
 // ── GTW UDS STATE MACHINE ───────────────────────────────────────
 
-static CanFrame pluginMakeUdsRequest(const uint8_t *payload, uint8_t len)
+static CanFrame pluginMakeUdsRequest(const uint8_t *payload, uint8_t len, uint8_t bus)
 {
     CanFrame frame;
     frame.id = PLUGIN_GTW_UDS_REQUEST_ID;
     frame.dlc = 8;
+    frame.bus = bus;
     // ISO-TP single frame PCI: high nibble = 0, low nibble = length
     frame.data[0] = len & 0x0F;
     for (uint8_t i = 0; i < len && i < 7; i++)
@@ -304,7 +324,7 @@ static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned
     case GTW_UDS_IDLE:
     {
         const uint8_t payload[] = {0x10, 0x03}; // DiagnosticSessionControl → ExtendedSession
-        driver.send(pluginMakeUdsRequest(payload, sizeof(payload)));
+        driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
         pluginGtwUdsEnter(m, GTW_UDS_SESSION_REQ, now, PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS);
         break;
     }
@@ -317,7 +337,7 @@ static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned
         if (m.stateEnteredAt == m.nextActionAt)
         {
             const uint8_t payload[] = {0x27, 0x01}; // SecurityAccess requestSeed
-            driver.send(pluginMakeUdsRequest(payload, sizeof(payload)));
+            driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
             m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
         }
         else if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
@@ -339,7 +359,7 @@ static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned
             payload[1] = 0x02;
             for (uint8_t i = 0; i < keyLen; i++)
                 payload[2 + i] = key[i];
-            driver.send(pluginMakeUdsRequest(payload, 2 + keyLen));
+            driver.send(pluginMakeUdsRequest(payload, 2 + keyLen, m.bus));
             m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
         }
         else if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
@@ -351,7 +371,7 @@ static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned
         {
             // 0x28 CommunicationControl: enableRxAndDisableTx (0x01), normalCommunication (0x01)
             const uint8_t payload[] = {0x28, 0x01, 0x01};
-            driver.send(pluginMakeUdsRequest(payload, sizeof(payload)));
+            driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
             m.nextActionAt = now + PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS;
         }
         else if ((long)(now - m.stateEnteredAt) >= PLUGIN_GTW_UDS_RESPONSE_TIMEOUT_MS)
@@ -361,7 +381,7 @@ static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned
     case GTW_UDS_ACTIVE:
     {
         const uint8_t payload[] = {0x3E, 0x00}; // TesterPresent
-        driver.send(pluginMakeUdsRequest(payload, sizeof(payload)));
+        driver.send(pluginMakeUdsRequest(payload, sizeof(payload), m.bus));
         m.nextActionAt = now + PLUGIN_GTW_UDS_KEEPALIVE_MS;
         break;
     }
@@ -374,6 +394,115 @@ static void pluginGtwUdsTick(PluginGtwUdsMachine &m, CanDriver &driver, unsigned
 }
 
 // ── JSON PARSING ────────────────────────────────────────────────
+
+static uint8_t pluginDefaultMuxMask(int16_t mux)
+{
+    if (mux < 0)
+        return 0;
+    return mux > 7 ? 0xFF : 0x07;
+}
+
+static bool pluginBusTokenEquals(const char *token, uint8_t len, const char *expected)
+{
+    for (uint8_t i = 0; i < len || expected[i] != '\0'; i++)
+    {
+        char a = i < len ? token[i] : '\0';
+        if (a >= 'a' && a <= 'z')
+            a = static_cast<char>(a - 'a' + 'A');
+        char b = expected[i];
+        if (a != b)
+            return false;
+    }
+    return true;
+}
+
+static uint8_t pluginBusMaskForToken(const char *token, uint8_t len)
+{
+    if (len == 0 || pluginBusTokenEquals(token, len, "ANY"))
+        return CAN_BUS_ANY;
+    if (pluginBusTokenEquals(token, len, "CH"))
+        return CAN_BUS_CH;
+    if (pluginBusTokenEquals(token, len, "VEH"))
+        return CAN_BUS_VEH;
+    if (pluginBusTokenEquals(token, len, "PARTY"))
+        return CAN_BUS_PARTY;
+    return CAN_BUS_ANY;
+}
+
+static uint8_t pluginParseBusString(const char *bus)
+{
+    if (!bus)
+        return CAN_BUS_ANY;
+
+    uint8_t mask = CAN_BUS_ANY;
+    const char *token = nullptr;
+    uint8_t len = 0;
+    for (const char *p = bus;; p++)
+    {
+        char c = *p;
+        bool separator = c == '\0' || c == ',' || c == '|' || c == '+' || c == ' ';
+        if (!separator)
+        {
+            if (!token)
+                token = p;
+            if (len < 16)
+                len++;
+            continue;
+        }
+        if (token)
+        {
+            mask |= pluginBusMaskForToken(token, len);
+            token = nullptr;
+            len = 0;
+        }
+        if (c == '\0')
+            break;
+    }
+    return mask;
+}
+
+static uint8_t pluginParseBus(JsonVariant value)
+{
+    if (value.isNull())
+        return CAN_BUS_ANY;
+    if (value.is<uint8_t>())
+        return value.as<uint8_t>() & (CAN_BUS_CH | CAN_BUS_VEH | CAN_BUS_PARTY);
+    if (value.is<const char *>())
+        return pluginParseBusString(value.as<const char *>());
+    if (value.is<JsonArray>())
+    {
+        uint8_t mask = CAN_BUS_ANY;
+        for (JsonVariant item : value.as<JsonArray>())
+            mask |= pluginParseBus(item);
+        return mask;
+    }
+    return CAN_BUS_ANY;
+}
+
+static bool pluginRuleMatchesBus(const PluginRule &rule, const CanFrame &frame)
+{
+    if (rule.busMask == CAN_BUS_ANY || frame.bus == CAN_BUS_ANY)
+        return true;
+    return (rule.busMask & frame.bus) != 0;
+}
+
+static bool pluginRuleMatchesMux(const PluginRule &rule, const CanFrame &frame)
+{
+    if (rule.mux < 0)
+        return true;
+    if (frame.dlc == 0)
+        return false;
+    uint8_t mask = rule.muxMask ? rule.muxMask : pluginDefaultMuxMask(rule.mux);
+    return (frame.data[0] & mask) == (static_cast<uint8_t>(rule.mux) & mask);
+}
+
+static bool pluginRuleMuxIncludes(const PluginRule &rule, uint8_t mux)
+{
+    if (rule.mux < 0)
+        return false;
+    uint8_t mask = rule.muxMask ? rule.muxMask : pluginDefaultMuxMask(rule.mux);
+    return (static_cast<uint8_t>(rule.mux) & mask) == (mux & mask);
+}
 
 static bool pluginParseJson(const String &json, PluginData &out)
 {
@@ -402,7 +531,19 @@ static bool pluginParseJson(const String &json, PluginData &out)
             break;
         PluginRule &r = out.rules[out.ruleCount];
         r.canId = rule["id"] | (uint32_t)0;
-        r.mux = rule["mux"] | (int)-1;
+        int mux = rule["mux"] | (int)-1;
+        if (mux < -1)
+            mux = -1;
+        if (mux > 255)
+            mux = 255;
+        r.mux = static_cast<int16_t>(mux);
+        JsonVariant muxMaskValue = rule["mux_mask"];
+        if (muxMaskValue.isNull())
+            muxMaskValue = rule["muxMask"];
+        r.muxMask = muxMaskValue | pluginDefaultMuxMask(r.mux);
+        if (r.mux >= 0 && r.muxMask == 0)
+            r.muxMask = pluginDefaultMuxMask(r.mux);
+        r.busMask = pluginParseBus(rule["bus"]);
         r.sendAfter = rule["send"] | true;
         r.opCount = 0;
 
@@ -463,9 +604,10 @@ static bool pluginParseJson(const String &json, PluginData &out)
                     o.type = OP_EMIT_PERIODIC;
                     o.intervalMs =
                         pluginClampPeriodicInterval(op["interval"] | PLUGIN_PERIODIC_INTERVAL_DEFAULT_MS);
-                    o.gtwSilent = op["gtw_silent"] | false;
-                    if (!o.gtwSilent)
-                        o.gtwSilent = op["silent"] | false;
+                    bool requestedSilent = op["gtw_silent"] | false;
+                    if (!requestedSilent)
+                        requestedSilent = op["silent"] | false;
+                    o.gtwSilent = requestedSilent && pluginGtwSilentSupported();
 
                     // When gtw_silent is requested, ensure the hardware CAN filter
                     // accepts UDS traffic so the state machine can see responses.
@@ -484,7 +626,7 @@ static bool pluginParseJson(const String &json, PluginData &out)
                                     break;
                                 }
                             }
-                            if (!dup && out.filterIdCount < PLUGIN_RULES_MAX)
+                            if (!dup && out.filterIdCount < PLUGIN_FILTER_IDS_MAX)
                                 out.filterIds[out.filterIdCount++] = udsIds[k];
                         }
                     }
@@ -507,7 +649,7 @@ static bool pluginParseJson(const String &json, PluginData &out)
                 break;
             }
         }
-        if (!found && out.filterIdCount < PLUGIN_RULES_MAX)
+        if (!found && out.filterIdCount < PLUGIN_FILTER_IDS_MAX)
             out.filterIds[out.filterIdCount++] = r.canId;
 
         out.ruleCount++;
@@ -518,6 +660,7 @@ static bool pluginParseJson(const String &json, PluginData &out)
 
 // ── SPIFFS STORAGE ──────────────────────────────────────────────
 
+#if !defined(NATIVE_BUILD)
 static String pluginFilePath(const char *filename)
 {
     return String("/p_") + filename;
@@ -591,6 +734,7 @@ static bool pluginRemove(uint8_t index)
     pluginsLocked = false;
     return true;
 }
+#endif
 
 static void pluginNormalizePriorities()
 {
@@ -856,7 +1000,7 @@ static bool pluginHasEnabledPeriodicEmit()
         for (uint8_t r = 0; r < pluginStore[p].ruleCount; r++)
         {
             const PluginRule &rule = pluginStore[p].rules[r];
-            if (rule.canId != 2047 || rule.mux != 3 || !rule.sendAfter)
+            if (rule.canId != 2047 || !pluginRuleMuxIncludes(rule, 3) || !rule.sendAfter)
                 continue;
             for (uint8_t o = 0; o < rule.opCount; o++)
             {
@@ -889,10 +1033,12 @@ static void pluginCachePeriodicEmit(const CanFrame &frame, uint16_t intervalMs, 
     if (wasActive && wasGtwSilent && gtwSilent)
     {
         pluginPeriodicEmit.uds = preservedUds;
+        pluginPeriodicEmit.uds.bus = frame.bus;
     }
     else
     {
         pluginPeriodicEmit.uds = {};
+        pluginPeriodicEmit.uds.bus = frame.bus;
         if (gtwSilent)
         {
             pluginPeriodicEmit.uds.retryAfterMs = PLUGIN_GTW_UDS_RETRY_BACKOFF_MS;
@@ -937,6 +1083,9 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
     if (original.id == PLUGIN_GTW_UDS_RESPONSE_ID && pluginPeriodicEmit.active &&
         pluginPeriodicEmit.gtwSilent)
     {
+        if (pluginPeriodicEmit.uds.bus != CAN_BUS_ANY && original.bus != CAN_BUS_ANY &&
+            (pluginPeriodicEmit.uds.bus & original.bus) == 0)
+            return false;
         pluginGtwUdsHandleResponse(pluginPeriodicEmit.uds, original, millis());
         return true;
     }
@@ -963,14 +1112,8 @@ static bool pluginProcessFrame(const CanFrame &original, CanDriver &driver)
             if (rule.canId != original.id)
                 continue;
 
-            if (rule.mux >= 0)
-            {
-                if (original.dlc == 0)
-                    continue;
-                uint8_t frameMux = original.data[0] & 0x07;
-                if (frameMux != (uint8_t)rule.mux)
-                    continue;
-            }
+            if (!pluginRuleMatchesBus(rule, original) || !pluginRuleMatchesMux(rule, original))
+                continue;
 
             processed = true;
             if (!rule.sendAfter)
