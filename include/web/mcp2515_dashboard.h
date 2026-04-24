@@ -409,7 +409,7 @@ static bool dashCheckADEnabled()
 
 static bool dashApInjectionAllowed()
 {
-    return !apInjectionGate || (dashHandler && (bool)dashHandler->ADEnabled);
+    return !apInjectionGate || (dashHandler && (bool)dashHandler->APActive);
 }
 
 static bool dashInjectionActive()
@@ -508,7 +508,10 @@ static void dashApplyRuntimeState()
         dashHandler->checkAD = dashCheckADEnabled;
         dashHandler->checkNag = dashCheckNagDisabled;
         if (!canActive)
+        {
             dashHandler->ADEnabled = false;
+            dashHandler->APActive = false;
+        }
     }
 
 #if defined(DASH_RGB_STATUS_LED)
@@ -894,7 +897,7 @@ static void handleStatus()
         fpsLastMs = now;
     }
 
-    bool ADActive = dashHandler ? (bool)dashHandler->ADEnabled : false;
+    bool ADActive = dashHandler ? (bool)dashHandler->APActive : false;
     int sp = dashHandler ? (int)dashHandler->speedProfile : 0;
     int soff = dashHandler ? (int)dashHandler->speedOffset : 0;
     int gtwAp = dashHandler ? (int)dashHandler->gatewayAutopilot : -1;

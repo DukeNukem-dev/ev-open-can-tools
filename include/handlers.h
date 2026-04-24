@@ -18,6 +18,7 @@ struct CarManagerBase
 {
     Shared<int> speedProfile{1};
     Shared<bool> ADEnabled{false};
+    Shared<bool> APActive{false};
     Shared<int> gatewayAutopilot{-1};
     Shared<bool> enablePrint{true};
     Shared<uint32_t> frameCount{0};
@@ -42,10 +43,10 @@ struct LegacyHandler : public CarManagerBase
 {
     const uint32_t *filterIds() const override
     {
-        static constexpr uint32_t ids[] = {69, 1006};
+        static constexpr uint32_t ids[] = {69, 921, 1006};
         return ids;
     }
-    uint8_t filterIdCount() const override { return 2; }
+    uint8_t filterIdCount() const override { return 3; }
 
     void handleMessage(CanFrame &frame, CanDriver &driver) override
     {
@@ -64,6 +65,13 @@ struct LegacyHandler : public CarManagerBase
                 speedProfile = 1;
             else
                 speedProfile = 0;
+            return;
+        }
+        if (frame.id == 921)
+        {
+            if (frame.dlc < 1)
+                return;
+            APActive = isDASAutopilotActive(readDASAutopilotStatus(frame));
             return;
         }
         if (frame.id == 1006)
@@ -118,10 +126,10 @@ struct HW3Handler : public CarManagerBase
 {
     const uint32_t *filterIds() const override
     {
-        static constexpr uint32_t ids[] = {1016, 1021, 2047};
+        static constexpr uint32_t ids[] = {921, 1016, 1021, 2047};
         return ids;
     }
-    uint8_t filterIdCount() const override { return 3; }
+    uint8_t filterIdCount() const override { return 4; }
 
     void handleMessage(CanFrame &frame, CanDriver &driver) override
     {
@@ -146,6 +154,13 @@ struct HW3Handler : public CarManagerBase
             default:
                 break;
             }
+            return;
+        }
+        if (frame.id == 921)
+        {
+            if (frame.dlc < 1)
+                return;
+            APActive = isDASAutopilotActive(readDASAutopilotStatus(frame));
             return;
         }
         if (frame.id == 2047)
@@ -200,7 +215,7 @@ struct HW3Handler : public CarManagerBase
 #if !defined(ESP32_DASHBOARD)
                 bool modified = false;
 #if defined(ENHANCED_AUTOPILOT)
-                if (enhancedAutopilotRuntime && enhancedAutopilotInjectionAllowed(ADEnabled))
+                if (enhancedAutopilotRuntime && enhancedAutopilotInjectionAllowed(APActive))
                 {
                     setBit(frame, 19, false);
                     setBit(frame, 46, true);
@@ -337,16 +352,22 @@ struct HW4Handler : public CarManagerBase
     }
     uint8_t filterIdCount() const override { return 4; }
 #else
-        static constexpr uint32_t ids[] = {1016, 1021, 2047};
+        static constexpr uint32_t ids[] = {921, 1016, 1021, 2047};
         return ids;
     }
-    uint8_t filterIdCount() const override { return 3; }
+    uint8_t filterIdCount() const override { return 4; }
 #endif
 
     void handleMessage(CanFrame &frame, CanDriver &driver) override
     {
         if (onFrame)
             onFrame(frame);
+        if (frame.id == 921)
+        {
+            if (frame.dlc < 1)
+                return;
+            APActive = isDASAutopilotActive(readDASAutopilotStatus(frame));
+        }
 #if defined(ISA_SPEED_CHIME_SUPPRESS) && !defined(ESP32_DASHBOARD)
         if (isaSpeedChimeSuppressRuntime && frame.id == 921)
         {
@@ -447,7 +468,7 @@ struct HW4Handler : public CarManagerBase
 #if !defined(ESP32_DASHBOARD)
                 bool modified = false;
 #if defined(ENHANCED_AUTOPILOT)
-                if (enhancedAutopilotRuntime && enhancedAutopilotInjectionAllowed(ADEnabled))
+                if (enhancedAutopilotRuntime && enhancedAutopilotInjectionAllowed(APActive))
                 {
                     setBit(frame, 19, false);
                     setBit(frame, 47, true);

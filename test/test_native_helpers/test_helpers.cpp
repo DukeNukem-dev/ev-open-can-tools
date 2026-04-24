@@ -135,6 +135,27 @@ void test_readGTWAutopilot_masks_other_bits()
     TEST_ASSERT_EQUAL_UINT8(7, readGTWAutopilot(f));
 }
 
+// --- DAS autopilot status ---
+
+void test_readDASAutopilotStatus_extracts_lower_nibble()
+{
+    CanFrame f = {};
+    f.data[0] = 0xA5;
+    TEST_ASSERT_EQUAL_UINT8(5, readDASAutopilotStatus(f));
+}
+
+void test_isDASAutopilotActive_true_for_active_states()
+{
+    TEST_ASSERT_TRUE(isDASAutopilotActive(3));
+    TEST_ASSERT_TRUE(isDASAutopilotActive(4));
+    TEST_ASSERT_TRUE(isDASAutopilotActive(5));
+}
+
+void test_isDASAutopilotActive_false_for_available_state()
+{
+    TEST_ASSERT_FALSE(isDASAutopilotActive(2));
+}
+
 // --- setSpeedProfileV12V13 ---
 
 void test_setSpeedProfileV12V13_sets_profile_0()
@@ -240,6 +261,9 @@ int main()
     RUN_TEST(test_isADSelectedInUI_true_with_other_bits);
     RUN_TEST(test_readGTWAutopilot_extracts_bits_42_to_44);
     RUN_TEST(test_readGTWAutopilot_masks_other_bits);
+    RUN_TEST(test_readDASAutopilotStatus_extracts_lower_nibble);
+    RUN_TEST(test_isDASAutopilotActive_true_for_active_states);
+    RUN_TEST(test_isDASAutopilotActive_false_for_available_state);
 
     RUN_TEST(test_setSpeedProfileV12V13_sets_profile_0);
     RUN_TEST(test_setSpeedProfileV12V13_sets_profile_1);

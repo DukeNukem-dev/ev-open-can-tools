@@ -294,6 +294,26 @@ void test_hw4_isa_suppress_runtime_off_skips_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
+void test_hw4_das_status_available_does_not_mark_ap_active()
+{
+    CanFrame f = {.id = 921};
+    f.data[0] = 0x02; // AVAILABLE
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_FALSE(handler.APActive);
+}
+
+void test_hw4_das_status_active_marks_ap_active()
+{
+    CanFrame f = {.id = 921};
+    f.data[0] = 0x04; // ACTIVE_2
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_TRUE(handler.APActive);
+}
+
 void test_hw4_gw_autopilot_mux2_updates_state_without_send()
 {
     CanFrame f = {.id = 2047};
@@ -356,6 +376,8 @@ int main()
     RUN_TEST(test_hw4_isa_suppress_checksum_correct);
     RUN_TEST(test_hw4_isa_suppress_returns_early_no_further_processing);
     RUN_TEST(test_hw4_isa_suppress_runtime_off_skips_send);
+    RUN_TEST(test_hw4_das_status_available_does_not_mark_ap_active);
+    RUN_TEST(test_hw4_das_status_active_marks_ap_active);
     RUN_TEST(test_hw4_gw_autopilot_mux2_updates_state_without_send);
 
     return UNITY_END();

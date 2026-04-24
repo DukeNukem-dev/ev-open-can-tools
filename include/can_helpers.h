@@ -77,6 +77,16 @@ inline uint8_t readGTWAutopilot(const CanFrame &frame)
     return static_cast<uint8_t>((frame.data[5] >> 2) & 0x07);
 }
 
+inline uint8_t readDASAutopilotStatus(const CanFrame &frame)
+{
+    return frame.data[0] & 0x0F;
+}
+
+inline bool isDASAutopilotActive(uint8_t status)
+{
+    return status >= 3 && status <= 5;
+}
+
 inline const char *describeGTWAutopilot(uint8_t value)
 {
     switch (value)

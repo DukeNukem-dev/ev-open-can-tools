@@ -32,11 +32,10 @@ static CanFrame hw4Mux1Frame()
 
 static void activateAp(CarManagerBase &handler)
 {
-    CanFrame f = {.id = 1021};
-    f.data[0] = 0x00;
-    f.data[4] = 0x20;
+    CanFrame f = {.id = 921};
+    f.data[0] = 0x03; // ACTIVE_1
     handler.handleMessage(f, mock);
-    TEST_ASSERT_TRUE(handler.ADEnabled);
+    TEST_ASSERT_TRUE(handler.APActive);
     mock.reset();
 }
 
@@ -47,6 +46,18 @@ void test_hw3_enhanced_autopilot_waits_for_ap_before_mux1_injection()
 
     CanFrame beforeAp = hw3Mux1Frame();
     handler.handleMessage(beforeAp, mock);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
+
+    CanFrame observedUiConfig = {.id = 1021};
+    observedUiConfig.data[0] = 0x00;
+    observedUiConfig.data[4] = 0x20;
+    handler.handleMessage(observedUiConfig, mock);
+    TEST_ASSERT_TRUE(handler.ADEnabled);
+    TEST_ASSERT_FALSE(handler.APActive);
+    mock.reset();
+
+    CanFrame stillBeforeAp = hw3Mux1Frame();
+    handler.handleMessage(stillBeforeAp, mock);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 
     activateAp(handler);
@@ -65,6 +76,18 @@ void test_hw4_enhanced_autopilot_waits_for_ap_before_mux1_injection()
 
     CanFrame beforeAp = hw4Mux1Frame();
     handler.handleMessage(beforeAp, mock);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
+
+    CanFrame observedUiConfig = {.id = 1021};
+    observedUiConfig.data[0] = 0x00;
+    observedUiConfig.data[4] = 0x20;
+    handler.handleMessage(observedUiConfig, mock);
+    TEST_ASSERT_TRUE(handler.ADEnabled);
+    TEST_ASSERT_FALSE(handler.APActive);
+    mock.reset();
+
+    CanFrame stillBeforeAp = hw4Mux1Frame();
+    handler.handleMessage(stillBeforeAp, mock);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 
     activateAp(handler);
