@@ -68,6 +68,19 @@ void test_hw4_follow_distance_5_sets_profile_4()
     TEST_ASSERT_EQUAL_INT(4, handler.speedProfile);
 }
 
+void test_hw4_manual_profile_ignores_follow_distance()
+{
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 1;
+
+    CanFrame f = {.id = 1016};
+    f.data[5] = 0b00100000; // fd = 1 would map to profile 3
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
+    TEST_ASSERT_FALSE(handler.speedProfileAuto);
+}
+
 // --- AD shadowing fix regression test ---
 
 void test_hw4_AD_enabled_only_set_on_mux0()
@@ -234,6 +247,22 @@ void test_hw4_mux2_sends_0()
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
+
+void test_hw4_manual_profile_injects_mux2_speed_profile()
+{
+    handler.ADEnabled = true;
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 4;
+
+    CanFrame f = {.id = 1021};
+    f.data[0] = 0x02;
+    f.data[7] = 0x70;
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[7] & 0x70);
+}
+
 void test_hw4_ignores_unrelated_can_id()
 {
     CanFrame f = {.id = 999};
@@ -378,6 +407,7 @@ int main()
     RUN_TEST(test_hw4_follow_distance_3_sets_profile_1);
     RUN_TEST(test_hw4_follow_distance_4_sets_profile_0);
     RUN_TEST(test_hw4_follow_distance_5_sets_profile_4);
+    RUN_TEST(test_hw4_manual_profile_ignores_follow_distance);
 
     RUN_TEST(test_hw4_AD_enabled_only_set_on_mux0);
     RUN_TEST(test_hw4_AD_mux0_sets_bits_46_and_60);
@@ -395,6 +425,7 @@ int main()
     RUN_TEST(test_hw4_mux0_AD_enabled_sends_1);
     RUN_TEST(test_hw4_mux1_sends_1);
     RUN_TEST(test_hw4_mux2_sends_0);
+    RUN_TEST(test_hw4_manual_profile_injects_mux2_speed_profile);
     RUN_TEST(test_hw4_ignores_unrelated_can_id);
 
     RUN_TEST(test_hw4_isa_suppress_sets_bit5_of_data1);

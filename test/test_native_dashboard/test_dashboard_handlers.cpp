@@ -50,6 +50,23 @@ void test_dashboard_legacy_mux0_observes_ad_without_injecting()
     TEST_ASSERT_EQUAL_HEX8(0x00, f.data[5] & 0x40);
 }
 
+void test_dashboard_legacy_manual_profile_injects_mux0()
+{
+    LegacyHandler handler;
+    prepareDashboardHandler(handler);
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 2;
+
+    CanFrame f = {.id = 1006};
+    f.data[0] = 0x00;
+    f.data[4] = 0x20;
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x04, mock.sent[0].data[6] & 0x06);
+}
+
 void test_dashboard_legacy_mux1_does_not_inject_nag_suppression()
 {
     LegacyHandler handler;
@@ -87,6 +104,23 @@ void test_dashboard_hw3_mux0_observes_state_without_injecting()
     TEST_ASSERT_EQUAL_HEX8(0x00, f.data[5] & 0x40);
 }
 
+void test_dashboard_hw3_manual_profile_injects_mux0()
+{
+    HW3Handler handler;
+    prepareDashboardHandler(handler);
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 2;
+
+    CanFrame f = {.id = 1021};
+    f.data[0] = 0x00;
+    f.data[4] = 0x20;
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x04, mock.sent[0].data[6] & 0x06);
+}
+
 void test_dashboard_hw3_mux1_does_not_inject_nag_suppression()
 {
     HW3Handler handler;
@@ -121,6 +155,24 @@ void test_dashboard_hw4_mux0_observes_ad_without_injecting()
     TEST_ASSERT_EQUAL_UINT8(0, onSendCount);
     TEST_ASSERT_EQUAL_HEX8(0x00, f.data[5] & 0x40);
     TEST_ASSERT_EQUAL_HEX8(0x00, f.data[7] & 0x18);
+}
+
+void test_dashboard_hw4_manual_profile_injects_mux2()
+{
+    HW4Handler handler;
+    prepareDashboardHandler(handler);
+    handler.ADEnabled = true;
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 4;
+
+    CanFrame f = {.id = 1021};
+    f.data[0] = 0x02;
+    f.data[7] = 0x70;
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[7] & 0x70);
 }
 
 void test_dashboard_hw4_mux1_does_not_inject_nag_suppression()
@@ -162,10 +214,13 @@ int main()
     UNITY_BEGIN();
 
     RUN_TEST(test_dashboard_legacy_mux0_observes_ad_without_injecting);
+    RUN_TEST(test_dashboard_legacy_manual_profile_injects_mux0);
     RUN_TEST(test_dashboard_legacy_mux1_does_not_inject_nag_suppression);
     RUN_TEST(test_dashboard_hw3_mux0_observes_state_without_injecting);
+    RUN_TEST(test_dashboard_hw3_manual_profile_injects_mux0);
     RUN_TEST(test_dashboard_hw3_mux1_does_not_inject_nag_suppression);
     RUN_TEST(test_dashboard_hw4_mux0_observes_ad_without_injecting);
+    RUN_TEST(test_dashboard_hw4_manual_profile_injects_mux2);
     RUN_TEST(test_dashboard_hw4_mux1_does_not_inject_nag_suppression);
     RUN_TEST(test_dashboard_hw4_isa_suppression_does_not_inject);
 

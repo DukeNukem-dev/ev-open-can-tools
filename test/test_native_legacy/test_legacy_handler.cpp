@@ -62,6 +62,19 @@ void test_legacy_stalk_pos3_sets_profile_0()
     TEST_ASSERT_EQUAL_INT(0, handler.speedProfile);
 }
 
+void test_legacy_manual_profile_ignores_stalk_position()
+{
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 1;
+
+    CanFrame f = {.id = 69};
+    f.data[1] = 0x00; // would map to profile 2
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
+    TEST_ASSERT_FALSE(handler.speedProfileAuto);
+}
+
 // --- AD activation (CAN ID 1006) ---
 
 void test_legacy_AD_enabled_on_mux0()
@@ -176,6 +189,7 @@ int main()
     RUN_TEST(test_legacy_stalk_pos1_sets_profile_2);
     RUN_TEST(test_legacy_stalk_pos2_sets_profile_1);
     RUN_TEST(test_legacy_stalk_pos3_sets_profile_0);
+    RUN_TEST(test_legacy_manual_profile_ignores_stalk_position);
 
     RUN_TEST(test_legacy_AD_enabled_on_mux0);
     RUN_TEST(test_legacy_no_send_when_AD_disabled);

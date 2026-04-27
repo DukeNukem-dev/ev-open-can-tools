@@ -122,6 +122,12 @@ inline void setSpeedProfileV12V13(CanFrame &frame, int profile)
     frame.data[6] |= (profile << 1);
 }
 
+inline void setSpeedProfileHW4(CanFrame &frame, int profile)
+{
+    frame.data[7] &= static_cast<uint8_t>(~0x70);
+    frame.data[7] |= static_cast<uint8_t>((profile & 0x07) << 4);
+}
+
 inline uint8_t computeVehicleChecksum(const CanFrame &frame, uint8_t checksumByteIndex = 7)
 {
     if (checksumByteIndex >= frame.dlc)

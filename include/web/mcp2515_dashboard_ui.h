@@ -397,6 +397,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
         <div class="profile-label">Profile</div>
         <div class="profile-group" id="sp3-group">
           <div class="hw-seg" id="sp3-seg">
+            <button class="hw-btn" data-v="-1" onclick="setProfileAuto()">Auto</button>
             <button class="hw-btn" data-v="0" onclick="setProfile(0)">Chill</button>
             <button class="hw-btn" data-v="1" onclick="setProfile(1)">Normal</button>
             <button class="hw-btn" data-v="2" onclick="setProfile(2)">Hurry</button>
@@ -404,6 +405,7 @@ hr{border:none;border-top:1px solid var(--bd);margin:16px}
         </div>
         <div class="profile-group hidden" id="sp4-group">
           <div class="hw-seg" id="sp4-seg">
+            <button class="hw-btn" data-v="-1" onclick="setProfileAuto()">Auto</button>
             <button class="hw-btn" data-v="0" onclick="setProfile(0)">Chill</button>
             <button class="hw-btn" data-v="1" onclick="setProfile(1)">Normal</button>
             <button class="hw-btn" data-v="2" onclick="setProfile(2)">Hurry</button>
@@ -778,6 +780,10 @@ const $=id=>document.getElementById(id);
 const setText=(id,value)=>{const el=$(id);if(el)el.textContent=value;};
 const setClass=(id,value)=>{const el=$(id);if(el)el.className=value;};
 function profileNamesForHw(hw){return hw===2?SP4:SP3;}
+function profileDisplayName(hw,sp,auto){
+  const name=(profileNamesForHw(hw)||[])[clampProfileForHw(hw,sp)]||'—';
+  return auto?'Auto ('+name+')':name;
+}
 function gtwAutopilotName(v){
   return ['NONE','HIGHWAY','ENHANCED','SELF_DRIVING','BASIC'][v]||'UNKNOWN';
 }
@@ -794,7 +800,7 @@ function updateGtwBadge(v){
   el.className='gtw-badge '+(known?'known':'');
   el.title=known?('GTW_autopilot: '+gtwAutopilotName(v)+' ('+v+')'):'GTW_autopilot: not seen yet';
 }
-let state={hw:1,can:true,apGate:false,sp:0,plgr:1,plgrmax:20,hw3OffsetSlew:false,hw3SlewRate:5};
+let state={hw:1,can:true,apGate:false,sp:0,spAuto:true,plgr:1,plgrmax:20,hw3OffsetSlew:false,hw3SlewRate:5};
 let sniffPaused=false,sniffFrames=[];
 let sniffShowDbcIds=localStorage.getItem('sniffIdMode')==='dbc';
 let otaFile=null;
@@ -978,7 +984,7 @@ function supportPluginSummary(){
 function supportSettingsSummary(){
   return [
     'Hardware: '+(HW[state.hw]||'?'),
-    'Speed profile: '+((profileNamesForHw(state.hw)||[])[state.sp]||'—'),
+    'Speed profile: '+profileDisplayName(state.hw,state.sp,state.spAuto),
     'CAN status: '+($('s-can')?$('s-can').textContent:'—'),
     'Injection: '+($('s-inj')?$('s-inj').textContent:'—'),
     'AD: '+($('s-AD')?$('s-AD').textContent:'—'),
@@ -999,7 +1005,7 @@ function buildSupportBody(){
     '',
     'Device',
     'Hardware: '+(HW[state.hw]||'?'),
-    'Speed profile: '+((profileNamesForHw(state.hw)||[])[state.sp]||'—'),
+    'Speed profile: '+profileDisplayName(state.hw,state.sp,state.spAuto),
     'CAN status: '+($('s-can')?$('s-can').textContent:'—'),
     'Injection: '+($('s-inj')?$('s-inj').textContent:'—'),
     'AD: '+($('s-AD')?$('s-AD').textContent:'—'),
@@ -1110,7 +1116,7 @@ function clampProfileForHw(hw,sp){
   return 0;
 }
 
-function updateProfileControls(hw,sp){
+function updateProfileControls(hw,sp,spAuto){
   const sp3=$('sp3-group'),sp4=$('sp4-group'),note=$('profile-note');
   const slewSec=$('hw3-slew-section');
   const safeSp=clampProfileForHw(hw,sp);
@@ -1118,24 +1124,40 @@ function updateProfileControls(hw,sp){
   if(sp4)sp4.classList.toggle('hidden',hw!==2);
   if(slewSec)slewSec.style.display=hw===1?'':'none';
   const sp3Seg=$('sp3-seg'),sp4Seg=$('sp4-seg');
-  if(sp3Seg)updSeg(sp3Seg,safeSp,'hw-btn');
-  if(sp4Seg)updSeg(sp4Seg,safeSp,'hw-btn');
+  updateProfileSeg(sp3Seg,safeSp,spAuto);
+  updateProfileSeg(sp4Seg,safeSp,spAuto);
   if(note){
-    if(hw===1)note.textContent='SP3 profiles are available on HW3.';
-    else if(hw===2)note.textContent='SP4 profiles are available on HW4.';
+    if(spAuto)note.textContent='Auto follows the vehicle follow distance.';
+    else if(hw===1)note.textContent='Manual SP3 profile is locked.';
+    else if(hw===2)note.textContent='Manual SP4 profile is locked.';
     else note.textContent='Profiles are only available on HW3 and HW4.';
   }
+}
+
+function updateProfileSeg(el,sp,spAuto){
+  if(!el)return;
+  el.querySelectorAll('.hw-btn').forEach(b=>{
+    const v=parseInt(b.dataset.v);
+    b.classList.toggle('active',spAuto?v===-1:v===sp);
+  });
 }
 
 function updSeg(el,v,cls){
   el.querySelectorAll('.'+cls).forEach(b=>b.classList.toggle('active',parseInt(b.dataset.v)===v));
 }
 
-function setHW(v){state.hw=v;state.sp=clampProfileForHw(v,state.sp);updSeg($('hw-seg'),v,'hw-btn');updateHW4(v);updateProfileControls(v,state.sp);updateSniffIdToggle();renderSniffer();pushCfg();}
+function setHW(v){state.hw=v;state.sp=clampProfileForHw(v,state.sp);updSeg($('hw-seg'),v,'hw-btn');updateHW4(v);updateProfileControls(v,state.sp,state.spAuto);updateSniffIdToggle();renderSniffer();pushCfg();}
+
+function setProfileAuto(){
+  state.spAuto=true;
+  updateProfileControls(state.hw,state.sp,state.spAuto);
+  pushCfg();
+}
 
 function setProfile(v){
+  state.spAuto=false;
   state.sp=clampProfileForHw(state.hw,v);
-  updateProfileControls(state.hw,state.sp);
+  updateProfileControls(state.hw,state.sp,state.spAuto);
   pushCfg();
 }
 
@@ -1164,7 +1186,7 @@ function toggleSniffIdMode(){
 }
 
 async function pushCfg(){
-  const body='hw='+state.hw+'&sp='+state.sp+'&can='+(state.can?'1':'0');
+  const body='hw='+state.hw+'&sp='+state.sp+'&spa='+(state.spAuto?'1':'0')+'&can='+(state.can?'1':'0');
   try{await fetch('/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});}catch(e){}
 }
 
@@ -1249,7 +1271,7 @@ async function pushLogging(){
 }
 
 async function emergencyStop(){if(!await dashConfirm('Stop injecting? This remains disabled after reboot until you press Resume Injection.','Stop injection','Stop'))return;try{await fetch('/disable',{method:'POST'});}catch(e){}poll();}
-async function resumeInj(){try{await fetch('/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'hw='+state.hw+'&sp='+state.sp+'&can=1'});}catch(e){}poll();}
+async function resumeInj(){try{await fetch('/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'hw='+state.hw+'&sp='+state.sp+'&spa='+(state.spAuto?'1':'0')+'&can=1'});}catch(e){}poll();}
 async function reboot(){if(!await dashConfirm('Reboot device?','Reboot','Reboot'))return;try{await fetch('/reboot',{method:'POST'});}catch(e){}}
 
 function fmtUp(s){
@@ -1419,7 +1441,7 @@ async function poll(){
     try{
       const d=await fetchPollJson('/status',5000,true);
     const on=!!d.can,armed=!!d.ci,injecting=typeof d.ia==='undefined'?armed:!!d.ia,fpsVal=Number(d.fps||0);
-    state.hw=d.hw;state.sp=clampProfileForHw(d.hw,d.sp);state.can=armed;
+    state.hw=d.hw;state.sp=clampProfileForHw(d.hw,d.sp);state.spAuto=typeof d.spAuto==='undefined'?state.spAuto:!!d.spAuto;state.can=armed;
     if(typeof d.plgr!=='undefined')updatePluginReplayControl(d.plgr,d.plgrmax);
     if(typeof d.apGate!=='undefined')updateApGateControl(d);
     updateHw3SlewControl(d);
@@ -1440,7 +1462,7 @@ async function poll(){
     setText('s-txerr',d.txerr);
     setClass('s-txerr','stat-val '+(d.txerr>0?'v-warn':'v-dim'));
     setText('s-fd',d.fd||'—');
-    setText('s-prof',profileNamesForHw(d.hw)[d.sp]||'—');
+    setText('s-prof',profileDisplayName(d.hw,state.sp,state.spAuto));
     setText('s-soff',d.soff||'0');
     setText('s-up',fmtUp(d.up));
     setText('s-mcp-raw','EFLG: 0x'+toHex(d.eflg,2));
@@ -1451,7 +1473,7 @@ async function poll(){
     try{renderWriteProbe(d.probe);}catch(e){}
     if(d.mux){for(let i=0;i<3;i++){setText('m'+i+'rx',d.mux[i].rx);setText('m'+i+'tx',d.mux[i].tx);const e=$('m'+i+'err');if(e){e.textContent=d.mux[i].err;e.style.color=d.mux[i].err>0?'var(--err)':'';}}}
     updateSniffIdToggle();
-    const hwSeg=$('hw-seg');if(hwSeg)updSeg(hwSeg,d.hw,'hw-btn');updateHW4(d.hw);updateProfileControls(d.hw,state.sp);
+    const hwSeg=$('hw-seg');if(hwSeg)updSeg(hwSeg,d.hw,'hw-btn');updateHW4(d.hw);updateProfileControls(d.hw,state.sp,state.spAuto);
     const eprn=$('tgl-eprn');if(eprn&&typeof d.eprn!=='undefined')eprn.checked=d.eprn;
     if(!dashboardInitialLoaded){
       dashboardInitialLoaded=true;
@@ -2403,7 +2425,7 @@ async function peReset(){
 }
 
 dashboardPollTimers.push(setInterval(poll,2000));dashboardPollTimers.push(setInterval(pollLog,5000));dashboardPollTimers.push(setInterval(pollSniffer,1000));dashboardPollTimers.push(setInterval(pollPlugins,10000));dashboardPollTimers.push(setInterval(loadWifiStatus,10000));dashboardPollTimers.push(setInterval(loadApStatus,10000));
-initCardMinimizers();initSubsectionMinimizers();updateHW4(1);updateProfileControls(1,0);updateSniffIdToggle();poll();pollRec();peRender();
+initCardMinimizers();initSubsectionMinimizers();updateHW4(1);updateProfileControls(1,0,true);updateSniffIdToggle();poll();pollRec();peRender();
 </script>
 </body>
 </html>

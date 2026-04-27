@@ -101,6 +101,8 @@ static const uint8_t mcpEflg = 0;
 static uint8_t hwMode = DASH_DEFAULT_HW;
 static bool canActive = kDashInjectionDefaultEnabled;
 static bool apInjectionGate = kDashApGateDefaultEnabled;
+static bool dashSpeedProfileAuto = true;
+static uint8_t dashManualSpeedProfile = 1;
 
 static constexpr uint8_t kHw3SlewRateMin = 1;
 static constexpr uint8_t kHw3SlewRateMax = 25;
@@ -444,6 +446,25 @@ static uint8_t dashLoadHw3SlewRate(uint8_t rate)
     return rate;
 }
 
+static uint8_t dashClampSpeedProfileForHw(uint8_t hw, int profile)
+{
+    int maxProfile = hw == 2 ? 4 : 2;
+    if (profile < 0)
+        return 0;
+    if (profile > maxProfile)
+        return static_cast<uint8_t>(maxProfile);
+    return static_cast<uint8_t>(profile);
+}
+
+static void dashApplySpeedProfileState()
+{
+    if (!dashHandler)
+        return;
+    dashHandler->speedProfileAuto = dashSpeedProfileAuto;
+    if (!dashSpeedProfileAuto)
+        dashHandler->speedProfile = dashClampSpeedProfileForHw(hwMode, dashManualSpeedProfile);
+}
+
 static bool dashReadHw3OffsetRaw(const CanFrame &frame, uint8_t &raw)
 {
     if (hwMode != 1 || frame.id != 1021 || frame.dlc < 2 || readMuxID(frame) != 2)
@@ -507,6 +528,7 @@ static void dashApplyRuntimeState()
     {
         dashHandler->checkAD = dashCheckADEnabled;
         dashHandler->checkNag = dashCheckNagDisabled;
+        dashApplySpeedProfileState();
         if (!canActive)
         {
             dashHandler->ADEnabled = false;
@@ -527,6 +549,8 @@ static void dashSavePrefs()
     prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     prefs.putBool("can", canActive);
     prefs.putBool("ap_gate", apInjectionGate);
+    prefs.putBool("sp_auto", dashSpeedProfileAuto);
+    prefs.putUChar("sp_sel", dashManualSpeedProfile);
     prefs.putBool("eprn", dashHandler ? (bool)dashHandler->enablePrint : true);
     prefs.putUChar("plg_rep", pluginGetReplayCount());
     prefs.putBool("h3_slw", hw3OffsetSlew);
@@ -632,6 +656,8 @@ static void dashLoadPrefs()
         prefs.putUChar("hw_def", DASH_DEFAULT_HW);
     canActive = prefs.getBool("can", kDashInjectionDefaultEnabled);
     apInjectionGate = prefs.getBool("ap_gate", kDashApGateDefaultEnabled);
+    dashSpeedProfileAuto = prefs.getBool("sp_auto", true);
+    dashManualSpeedProfile = dashClampSpeedProfileForHw(hwMode, prefs.getUChar("sp_sel", 1));
     pluginSetReplayCount(prefs.getUChar("plg_rep", PLUGIN_REPLAY_COUNT));
     hw3OffsetSlew = prefs.getBool("h3_slw", false);
     hw3SlewRate = dashLoadHw3SlewRate(prefs.getUChar("h3_srt", kHw3SlewRateDefault));
@@ -899,6 +925,7 @@ static void handleStatus()
 
     bool ADActive = dashHandler ? (bool)dashHandler->APActive : false;
     int sp = dashHandler ? (int)dashHandler->speedProfile : 0;
+    bool spAuto = dashHandler ? (bool)dashHandler->speedProfileAuto : true;
     int soff = dashHandler ? (int)dashHandler->speedOffset : 0;
     int gtwAp = dashHandler ? (int)dashHandler->gatewayAutopilot : -1;
     bool ep = dashHandler ? (bool)dashHandler->enablePrint : true;
@@ -907,6 +934,8 @@ static void handleStatus()
     j += hwMode;
     j += ",\"sp\":";
     j += sp;
+    j += ",\"spAuto\":";
+    j += spAuto ? "true" : "false";
     j += ",\"soff\":";
     j += soff;
     j += ",\"gtwap\":";
@@ -1012,6 +1041,23 @@ static void handleConfig()
     }
     if (server.hasArg("can"))
         canActive = server.arg("can") == "1";
+    bool profileAutoRequested = server.hasArg("spa") && server.arg("spa") == "1";
+    if (server.hasArg("sp"))
+    {
+        uint8_t v = dashClampSpeedProfileForHw(hwMode, server.arg("sp").toInt());
+        if (!profileAutoRequested && (v != dashManualSpeedProfile || dashSpeedProfileAuto))
+            dashLog("[CFG] Speed profile manual " + String(v));
+        dashManualSpeedProfile = v;
+        if (!profileAutoRequested)
+            dashSpeedProfileAuto = false;
+    }
+    if (server.hasArg("spa"))
+    {
+        bool v = server.arg("spa") == "1";
+        if (v != dashSpeedProfileAuto)
+            dashLog("[CFG] Speed profile " + String(v ? "AUTO" : "MANUAL"));
+        dashSpeedProfileAuto = v;
+    }
     if (server.hasArg("apg"))
     {
         bool v = server.arg("apg") == "1";

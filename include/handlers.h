@@ -17,6 +17,7 @@ inline LogRingBuffer logRing;
 struct CarManagerBase
 {
     Shared<int> speedProfile{1};
+    Shared<bool> speedProfileAuto{true};
     Shared<bool> ADEnabled{false};
     Shared<bool> APActive{false};
     Shared<bool> Parked{false};
@@ -37,6 +38,15 @@ struct CarManagerBase
     bool injectionGateOpen() const
     {
         return (bool)APActive || (bool)Parked;
+    }
+
+    bool shouldInjectSpeedProfile() const
+    {
+#if defined(ESP32_DASHBOARD)
+        return !speedProfileAuto;
+#else
+        return true;
+#endif
     }
 
     virtual void handleMessage(CanFrame &frame, CanDriver &driver) = 0;
@@ -63,6 +73,8 @@ struct LegacyHandler : public CarManagerBase
         if (frame.id == 69)
         {
             if (frame.dlc < 2)
+                return;
+            if (!speedProfileAuto)
                 return;
             uint8_t pos = frame.data[1] >> 5;
             if (pos <= 1)
@@ -94,16 +106,14 @@ struct LegacyHandler : public CarManagerBase
             auto index = readMuxID(frame);
             if (index == 0)
                 ADEnabled = isADSelectedInUI(frame) && (!checkAD || checkAD());
-            if (index == 0 && ADEnabled && (!checkAD || checkAD()))
+            if (index == 0 && ADEnabled && shouldInjectSpeedProfile() && (!checkAD || checkAD()))
             {
                 setSpeedProfileV12V13(frame, speedProfile);
-#if !defined(ESP32_DASHBOARD)
                 setBit(frame, 46, true);
                 framesSent++;
                 driver.send(frame);
                 if (onSend)
                     onSend(0, true);
-#endif
             }
             if (index == 1 && (!checkNag || checkNag()))
             {
@@ -158,6 +168,8 @@ struct HW3Handler : public CarManagerBase
         if (frame.id == 1016)
         {
             if (frame.dlc < 6)
+                return;
+            if (!speedProfileAuto)
                 return;
             uint8_t followDistance = (frame.data[5] & 0b11100000) >> 5;
             switch (followDistance)
@@ -222,7 +234,17 @@ struct HW3Handler : public CarManagerBase
             if (index == 0 && ADEnabled && (!checkAD || checkAD()))
             {
                 speedOffset = std::max(std::min(((uint8_t)((frame.data[3] >> 1) & 0x3F) - 30) * 5, 100), 0);
-#if !defined(ESP32_DASHBOARD)
+#if defined(ESP32_DASHBOARD)
+                if (shouldInjectSpeedProfile())
+                {
+                    setSpeedProfileV12V13(frame, speedProfile);
+                    setBit(frame, 46, true);
+                    framesSent++;
+                    driver.send(frame);
+                    if (onSend)
+                        onSend(0, true);
+                }
+#else
                 setBit(frame, 46, true);
                 framesSent++;
                 driver.send(frame);
@@ -419,6 +441,8 @@ struct HW4Handler : public CarManagerBase
         {
             if (frame.dlc < 6)
                 return;
+            if (!speedProfileAuto)
+                return;
             auto fd = (frame.data[5] & 0b11100000) >> 5;
             switch (fd)
             {
@@ -489,6 +513,14 @@ struct HW4Handler : public CarManagerBase
                 if (onSend)
                     onSend(0, true);
 #endif
+            }
+            if (index == 2 && ADEnabled && !speedProfileAuto && (!checkAD || checkAD()))
+            {
+                setSpeedProfileHW4(frame, speedProfile);
+                framesSent++;
+                driver.send(frame);
+                if (onSend)
+                    onSend(2, true);
             }
             if (index == 1)
             {

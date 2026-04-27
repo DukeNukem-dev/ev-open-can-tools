@@ -53,6 +53,19 @@ void test_hw3_follow_distance_0_keeps_default()
     TEST_ASSERT_EQUAL_INT(1, handler.speedProfile); // default
 }
 
+void test_hw3_manual_profile_ignores_follow_distance()
+{
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 1;
+
+    CanFrame f = {.id = 1016};
+    f.data[5] = 0b00100000; // followDistance = 1 would map to profile 2
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
+    TEST_ASSERT_FALSE(handler.speedProfileAuto);
+}
+
 void test_hw3_follow_distance_profile_survives_mux0_without_injection()
 {
     CanFrame followDistanceFrame = {.id = 1016};
@@ -282,6 +295,7 @@ int main()
     RUN_TEST(test_hw3_follow_distance_2_sets_profile_1);
     RUN_TEST(test_hw3_follow_distance_3_sets_profile_0);
     RUN_TEST(test_hw3_follow_distance_0_keeps_default);
+    RUN_TEST(test_hw3_manual_profile_ignores_follow_distance);
     RUN_TEST(test_hw3_follow_distance_profile_survives_mux0_without_injection);
 
     RUN_TEST(test_hw3_AD_enabled_only_set_on_mux0);
