@@ -41,6 +41,7 @@ Temporary Items
 .gcc-flags.json
 .pio
 .platformio-ci
+index.html
 
 ### Python ###
 # Byte-compiled / optimized / DLL files
@@ -240,3 +241,5 @@ pyrightconfig.json
 # CUSTOM STUFF #
 .tests
 .tmpcoverage_build/
+platformio_profile.h
+.pi-lens

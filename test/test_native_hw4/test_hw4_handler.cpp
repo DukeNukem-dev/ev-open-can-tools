@@ -68,13 +68,26 @@ void test_hw4_follow_distance_5_sets_profile_4()
     TEST_ASSERT_EQUAL_INT(4, handler.speedProfile);
 }
 
+void test_hw4_manual_profile_ignores_follow_distance()
+{
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 1;
+
+    CanFrame f = {.id = 1016};
+    f.data[5] = 0b00100000; // fd = 1 would map to profile 3
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL_INT(1, handler.speedProfile);
+    TEST_ASSERT_FALSE(handler.speedProfileAuto);
+}
+
 // --- AD shadowing fix regression test ---
 
 void test_hw4_AD_enabled_only_set_on_mux0()
 {
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
-    f0.data[4] = 0x40;
+    f0.data[4] = 0x20;
     handler.handleMessage(f0, mock);
     TEST_ASSERT_TRUE(handler.ADEnabled);
 
@@ -93,7 +106,7 @@ void test_hw4_AD_mux0_sets_bits_46_and_60()
 {
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
     TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[5] & 0x40); // bit 46
@@ -104,7 +117,7 @@ void test_hw4_AD_mux0_sets_emergency_bit59()
 {
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
     TEST_ASSERT_EQUAL_HEX8(0x08, mock.sent[0].data[7] & 0x08); // bit 59
@@ -115,7 +128,7 @@ void test_hw4_AD_mux0_skips_emergency_bit59_when_runtime_disabled()
     emergencyVehicleDetectionRuntime = false;
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
     TEST_ASSERT_EQUAL_HEX8(0x00, mock.sent[0].data[7] & 0x08);
@@ -137,7 +150,7 @@ void test_hw4_checkAD_blocks_mux0_and_mux2_send()
 
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
-    f0.data[4] = 0x40;
+    f0.data[4] = 0x20;
     handler.handleMessage(f0, mock);
     TEST_ASSERT_FALSE(handler.ADEnabled);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
@@ -179,7 +192,7 @@ void test_hw4_mux2_does_not_inject_speed_profile()
     handler.speedProfile = 3;
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
-    f0.data[4] = 0x40;
+    f0.data[4] = 0x20;
     handler.handleMessage(f0, mock);
     mock.reset();
     CanFrame f = {.id = 1021};
@@ -194,7 +207,7 @@ void test_hw4_mux2_preserves_old_profile_bits_by_not_sending()
     handler.speedProfile = 0;
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
-    f0.data[4] = 0x40;
+    f0.data[4] = 0x20;
     handler.handleMessage(f0, mock);
     mock.reset();
     CanFrame f = {.id = 1021};
@@ -209,7 +222,7 @@ void test_hw4_mux0_AD_enabled_sends_1()
 {
     CanFrame f = {.id = 1021};
     f.data[0] = 0x00;
-    f.data[4] = 0x40;
+    f.data[4] = 0x20;
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(1, mock.sent.size());
 }
@@ -226,7 +239,7 @@ void test_hw4_mux2_sends_0()
 {
     CanFrame f0 = {.id = 1021};
     f0.data[0] = 0x00;
-    f0.data[4] = 0x40;
+    f0.data[4] = 0x20;
     handler.handleMessage(f0, mock);
     mock.reset();
     CanFrame f = {.id = 1021};
@@ -234,6 +247,22 @@ void test_hw4_mux2_sends_0()
     handler.handleMessage(f, mock);
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
+
+void test_hw4_manual_profile_injects_mux2_speed_profile()
+{
+    handler.ADEnabled = true;
+    handler.speedProfileAuto = false;
+    handler.speedProfile = 4;
+
+    CanFrame f = {.id = 1021};
+    f.data[0] = 0x02;
+    f.data[7] = 0x70;
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_EQUAL(1, mock.sent.size());
+    TEST_ASSERT_EQUAL_HEX8(0x40, mock.sent[0].data[7] & 0x70);
+}
+
 void test_hw4_ignores_unrelated_can_id()
 {
     CanFrame f = {.id = 999};
@@ -294,6 +323,26 @@ void test_hw4_isa_suppress_runtime_off_skips_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
+void test_hw4_das_status_available_does_not_mark_ap_active()
+{
+    CanFrame f = {.id = 921};
+    f.data[0] = 0x02; // AVAILABLE
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_FALSE(handler.APActive);
+}
+
+void test_hw4_das_status_active_marks_ap_active()
+{
+    CanFrame f = {.id = 921};
+    f.data[0] = 0x04; // ACTIVE_2
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_TRUE(handler.APActive);
+}
+
 void test_hw4_gw_autopilot_mux2_updates_state_without_send()
 {
     CanFrame f = {.id = 2047};
@@ -304,20 +353,47 @@ void test_hw4_gw_autopilot_mux2_updates_state_without_send()
     TEST_ASSERT_EQUAL(0, mock.sent.size());
 }
 
+void test_hw4_gear_park_marks_parked()
+{
+    CanFrame f = {.id = 390};
+    f.dlc = 8;
+    f.data[7] = static_cast<uint8_t>(1U << 3);
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_TRUE(handler.Parked);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
+}
+
+void test_hw4_gear_drive_clears_parked()
+{
+    handler.Parked = true;
+    CanFrame f = {.id = 390};
+    f.dlc = 8;
+    f.data[7] = static_cast<uint8_t>(4U << 3);
+
+    handler.handleMessage(f, mock);
+
+    TEST_ASSERT_FALSE(handler.Parked);
+    TEST_ASSERT_EQUAL(0, mock.sent.size());
+}
+
 // --- Filter IDs ---
 
 void test_hw4_filter_ids_count()
 {
-    TEST_ASSERT_EQUAL_UINT8(4, handler.filterIdCount());
+    TEST_ASSERT_EQUAL_UINT8(6, handler.filterIdCount());
 }
 
 void test_hw4_filter_ids_values()
 {
     const uint32_t *ids = handler.filterIds();
-    TEST_ASSERT_EQUAL_UINT32(921, ids[0]);
-    TEST_ASSERT_EQUAL_UINT32(1016, ids[1]);
-    TEST_ASSERT_EQUAL_UINT32(1021, ids[2]);
-    TEST_ASSERT_EQUAL_UINT32(2047, ids[3]);
+    TEST_ASSERT_EQUAL_UINT32(280, ids[0]);
+    TEST_ASSERT_EQUAL_UINT32(390, ids[1]);
+    TEST_ASSERT_EQUAL_UINT32(921, ids[2]);
+    TEST_ASSERT_EQUAL_UINT32(1016, ids[3]);
+    TEST_ASSERT_EQUAL_UINT32(1021, ids[4]);
+    TEST_ASSERT_EQUAL_UINT32(2047, ids[5]);
 }
 
 int main()
@@ -332,6 +408,7 @@ int main()
     RUN_TEST(test_hw4_follow_distance_3_sets_profile_1);
     RUN_TEST(test_hw4_follow_distance_4_sets_profile_0);
     RUN_TEST(test_hw4_follow_distance_5_sets_profile_4);
+    RUN_TEST(test_hw4_manual_profile_ignores_follow_distance);
 
     RUN_TEST(test_hw4_AD_enabled_only_set_on_mux0);
     RUN_TEST(test_hw4_AD_mux0_sets_bits_46_and_60);
@@ -349,6 +426,7 @@ int main()
     RUN_TEST(test_hw4_mux0_AD_enabled_sends_1);
     RUN_TEST(test_hw4_mux1_sends_1);
     RUN_TEST(test_hw4_mux2_sends_0);
+    RUN_TEST(test_hw4_manual_profile_injects_mux2_speed_profile);
     RUN_TEST(test_hw4_ignores_unrelated_can_id);
 
     RUN_TEST(test_hw4_isa_suppress_sets_bit5_of_data1);
@@ -356,7 +434,11 @@ int main()
     RUN_TEST(test_hw4_isa_suppress_checksum_correct);
     RUN_TEST(test_hw4_isa_suppress_returns_early_no_further_processing);
     RUN_TEST(test_hw4_isa_suppress_runtime_off_skips_send);
+    RUN_TEST(test_hw4_das_status_available_does_not_mark_ap_active);
+    RUN_TEST(test_hw4_das_status_active_marks_ap_active);
     RUN_TEST(test_hw4_gw_autopilot_mux2_updates_state_without_send);
+    RUN_TEST(test_hw4_gear_park_marks_parked);
+    RUN_TEST(test_hw4_gear_drive_clears_parked);
 
     return UNITY_END();
 }
