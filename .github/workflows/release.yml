@@ -87,6 +87,9 @@ jobs:
       - run: pio run -e ${{ matrix.env }}
         env:
           SKIP_DASH_CREDENTIAL_CHECK: "1"
+      # Ensure data directory exists for SPIFFS build
+      - if: matrix.env == 'esp32s2_twai'
+        run: mkdir -p data
       - if: matrix.artifact_path != ''
         uses: actions/upload-artifact@v7
         with:
