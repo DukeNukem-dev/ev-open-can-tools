@@ -48,7 +48,7 @@ jobs:
             artifact_name: firmware-esp32s2
             artifact_path: .pio/build/esp32s2_twai/firmware.bin
             extra_python_packages: littlefs-python fatfs-ng pyyaml
-            
+
           - env: m5stack-atomic-can-base
             profile: --driver DRIVER_TWAI --vehicle HW4 --enable EMERGENCY_VEHICLE_DETECTION
               --enable ENHANCED_AUTOPILOT
@@ -92,6 +92,16 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
+      # BUILD AND UPLOAD SPIFFS FOR ESP32-S2
+      - if: matrix.env == 'esp32s2_twai'
+        run: pio run -e esp32s2_twai --target buildfs
+        env:
+          SKIP_DASH_CREDENTIAL_CHECK: "1"
+      - if: matrix.env == 'esp32s2_twai'
+        uses: actions/upload-artifact@v7
+        with:
+          name: spiffs-esp32s2
+          path: .pio/build/esp32s2_twai/spiffs.bin
 
   release:
     needs:
@@ -106,7 +116,8 @@ jobs:
           path: release-assets
       - name: Rename firmware files to unique names
         run: |
-          for dir in release-assets/firmware-*/; do
+          for dir in release-assets/firmware-*/ release-assets/spiffs-*/; do
+            [ -d "$dir" ] || continue
             name=$(basename "$dir")
             for f in "$dir"*; do
               ext="${f##*.}"
@@ -138,6 +149,7 @@ jobs:
             release-assets/firmware-esp32-featherwing.bin
             release-assets/firmware-esp32-ext-mcp2515.bin
             release-assets/firmware-esp32s2.bin
+            release-assets/spiffs-esp32s2.bin
       - name: Publish draft release
         env:
           GH_TOKEN: ${{ github.token }}
